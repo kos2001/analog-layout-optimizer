@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+httpx          # for TestClient / quick checks
+numpy
+scipy
+# plus the layout_opt engine (editable install of the parent repo):
+#   uv pip install -e ../../../virtuoso-bridge-lite
