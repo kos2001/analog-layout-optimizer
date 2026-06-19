@@ -10,9 +10,11 @@ import ProcessView from "./components/ProcessView";
 import SurrogateView from "./components/SurrogateView";
 import BridgeView from "./components/BridgeView";
 import AgentConsole from "./components/AgentConsole";
+import { useT } from "./i18n";
 import type { Config, LayoutPayload, OptimizeResult, Params } from "./types";
 
 export default function App() {
+  const { t, lang, setLang } = useT();
   const [tab, setTab] = useState<"layout" | "comparator" | "tcoil" | "opamp" | "process" | "surrogate" | "bridge" | "agent">("layout");
   const [config, setConfig] = useState<Config | null>(null);
   const [params, setParams] = useState<Params | null>(null);
@@ -99,35 +101,24 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>Analog Layout Optimizer</h1>
-        <p className="subtitle">
-          Agentic analog layout experiments — <strong>no Virtuoso in the loop</strong>
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <h1>{t("app.title")}</h1>
+          <div className="seg" style={{ marginBottom: 0 }}>
+            <button className={lang === "en" ? "" : "secondary"} onClick={() => setLang("en")}>EN</button>
+            <button className={lang === "ko" ? "" : "secondary"} onClick={() => setLang("ko")}>한국어</button>
+          </div>
+        </div>
+        <p className="subtitle">{t("app.subtitle")}</p>
         <nav className="tabs">
-          <button className={tab === "layout" ? "tab on" : "tab"} onClick={() => setTab("layout")}>
-            Layout / Joint
-          </button>
-          <button className={tab === "comparator" ? "tab on" : "tab"} onClick={() => setTab("comparator")}>
-            Comparator (maze)
-          </button>
-          <button className={tab === "tcoil" ? "tab on" : "tab"} onClick={() => setTab("tcoil")}>
-            T-coil
-          </button>
-          <button className={tab === "opamp" ? "tab on" : "tab"} onClick={() => setTab("opamp")}>
-            Op-amp (OTA)
-          </button>
-          <button className={tab === "process" ? "tab on" : "tab"} onClick={() => setTab("process")}>
-            Process change
-          </button>
-          <button className={tab === "surrogate" ? "tab on" : "tab"} onClick={() => setTab("surrogate")}>
-            Surrogate
-          </button>
-          <button className={tab === "bridge" ? "tab on" : "tab"} onClick={() => setTab("bridge")}>
-            Bridge / SKILL
-          </button>
-          <button className={tab === "agent" ? "tab on" : "tab"} onClick={() => setTab("agent")}>
-            Agent
-          </button>
+          {([
+            ["layout", "tab.layout"], ["comparator", "tab.comparator"], ["tcoil", "tab.tcoil"],
+            ["opamp", "tab.opamp"], ["process", "tab.process"], ["surrogate", "tab.surrogate"],
+            ["bridge", "tab.bridge"], ["agent", "tab.agent"],
+          ] as const).map(([id, key]) => (
+            <button key={id} className={tab === id ? "tab on" : "tab"} onClick={() => setTab(id)}>
+              {t(key)}
+            </button>
+          ))}
         </nav>
       </header>
 
@@ -140,33 +131,33 @@ export default function App() {
       {tab === "agent" && <AgentConsole />}
       {tab === "layout" && error && <div className="fatal">Error: {error}</div>}
       {tab === "layout" && !error && !(config && params && layout) && (
-        <div className="loading">Loading…</div>
+        <div className="loading">{t("loading")}</div>
       )}
       {tab === "layout" && config && params && layout && (
       <div className="grid">
         <section className="panel layout-panel">
           <div className="panel-title">
-            Layout
+            {t("layout.title")}
             <span className={layout.isClean ? "badge ok" : "badge bad"}>
-              {layout.isClean ? "DRC clean" : `${layout.violations.length} violation(s)`}
+              {layout.isClean ? t("drc.clean") : `${layout.violations.length} violation(s)`}
             </span>
           </div>
           <LayoutCanvas layout={layout} />
           <div className="metrics">
             <div>
               <span className="metric-label">
-                {layout.deviceArea != null ? "total cell area" : "bbox area"}
+                {layout.deviceArea != null ? t("total.area") : t("bbox.area")}
               </span>
               <span className="metric-value">{layout.area.toFixed(4)} µm²</span>
             </div>
             {layout.deviceArea != null ? (
               <>
                 <div>
-                  <span className="metric-label">device area</span>
+                  <span className="metric-label">{t("device.area")}</span>
                   <span className="metric-value">{layout.deviceArea.toFixed(4)} µm²</span>
                 </div>
                 <div>
-                  <span className="metric-label">wirelength</span>
+                  <span className="metric-label">{t("wirelength")}</span>
                   <span className="metric-value">
                     {layout.wirelength?.toFixed(2)} µm
                   </span>
@@ -192,7 +183,7 @@ export default function App() {
         </section>
 
         <section className="panel controls-panel">
-          <div className="panel-title">Parameters</div>
+          <div className="panel-title">{t("params.title")}</div>
           <ParamSliders
             config={config}
             params={params}
@@ -210,13 +201,13 @@ export default function App() {
 
           <div className="actions">
             <button onClick={runOptimize} disabled={busy}>
-              {busy ? "Optimizing…" : "▶ Optimize device"}
+              {busy ? t("btn.optimizing") : t("btn.optimize.device")}
             </button>
             <button onClick={runJoint} disabled={busy}>
-              ▶ Joint (device+routing)
+              {t("btn.joint")}
             </button>
             <button className="secondary" onClick={resetManual} disabled={busy}>
-              Reset
+              {t("btn.reset")}
             </button>
           </div>
 
@@ -224,7 +215,7 @@ export default function App() {
             <div className="replay">
               <div className="replay-controls">
                 <button onClick={() => setPlaying((p) => !p)}>
-                  {playing ? "⏸ Pause" : "▶ Play"}
+                  {playing ? t("btn.pause") : t("btn.play")}
                 </button>
                 <input
                   type="range"
@@ -250,12 +241,12 @@ export default function App() {
         </section>
 
         <section className="panel chart-panel">
-          <div className="panel-title">Convergence — area vs. iteration</div>
+          <div className="panel-title">{t("conv.title")}</div>
           <ConvergenceChart frames={opt?.frames ?? []} current={frameIdx} />
         </section>
 
         <section className="panel drc-panel">
-          <div className="panel-title">DRC / spec status</div>
+          <div className="panel-title">{t("drc.status")}</div>
           {layout.isClean ? (
             <p className="drc-clean">All geometric rules and the drive spec are met.</p>
           ) : (
