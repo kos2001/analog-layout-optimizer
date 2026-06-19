@@ -66,3 +66,43 @@ export async function evalTcoil(L: number, k: number, Cb: number): Promise<Tcoil
     }),
   );
 }
+
+import type { OpAmpResult, OpAmpStudy, Preflight, SpectreEval } from "./types";
+
+export async function fetchOpamp(): Promise<OpAmpResult> {
+  return jsonOrThrow<OpAmpResult>(await fetch("/api/opamp"));
+}
+export async function fetchOpampStudy(): Promise<OpAmpStudy> {
+  return jsonOrThrow<OpAmpStudy>(await fetch("/api/opamp/study?seeds=4"));
+}
+export async function fetchPreflight(): Promise<Preflight> {
+  return jsonOrThrow<Preflight>(await fetch("/api/opamp/preflight"));
+}
+export async function fetchSpectreEval(): Promise<SpectreEval> {
+  return jsonOrThrow<SpectreEval>(await fetch("/api/opamp/spectre-eval"));
+}
+
+import type { AdaptResponse } from "./types";
+
+export async function adaptProcess(nl: string): Promise<AdaptResponse> {
+  return jsonOrThrow<AdaptResponse>(
+    await fetch("/api/adapt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nl }),
+    }),
+  );
+}
+
+import type { SurrogateData, SkillData, BridgeData, BodeData, AgentResp } from "./types";
+
+export const fetchSurrogate = () => fetch("/api/surrogate").then((r) => r.json() as Promise<SurrogateData>);
+export const fetchSkill = () => fetch("/api/skill").then((r) => r.json() as Promise<SkillData>);
+export const fetchBridge = () => fetch("/api/bridge").then((r) => r.json() as Promise<BridgeData>);
+export const fetchOpampBode = () => fetch("/api/opamp/bode").then((r) => r.json() as Promise<BodeData>);
+export async function askAgent(prompt: string): Promise<AgentResp> {
+  return jsonOrThrow<AgentResp>(await fetch("/api/agent", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  }));
+}
