@@ -5,10 +5,15 @@ import ParamSliders from "./components/ParamSliders";
 import ConvergenceChart from "./components/ConvergenceChart";
 import MazeView from "./components/MazeView";
 import TCoilView from "./components/TCoilView";
+import OpAmpView from "./components/OpAmpView";
+import ProcessView from "./components/ProcessView";
+import SurrogateView from "./components/SurrogateView";
+import BridgeView from "./components/BridgeView";
+import AgentConsole from "./components/AgentConsole";
 import type { Config, LayoutPayload, OptimizeResult, Params } from "./types";
 
 export default function App() {
-  const [tab, setTab] = useState<"layout" | "comparator" | "tcoil">("layout");
+  const [tab, setTab] = useState<"layout" | "comparator" | "tcoil" | "opamp" | "process" | "surrogate" | "bridge" | "agent">("layout");
   const [config, setConfig] = useState<Config | null>(null);
   const [params, setParams] = useState<Params | null>(null);
   const [layout, setLayout] = useState<LayoutPayload | null>(null);
@@ -108,11 +113,31 @@ export default function App() {
           <button className={tab === "tcoil" ? "tab on" : "tab"} onClick={() => setTab("tcoil")}>
             T-coil
           </button>
+          <button className={tab === "opamp" ? "tab on" : "tab"} onClick={() => setTab("opamp")}>
+            Op-amp (OTA)
+          </button>
+          <button className={tab === "process" ? "tab on" : "tab"} onClick={() => setTab("process")}>
+            Process change
+          </button>
+          <button className={tab === "surrogate" ? "tab on" : "tab"} onClick={() => setTab("surrogate")}>
+            Surrogate
+          </button>
+          <button className={tab === "bridge" ? "tab on" : "tab"} onClick={() => setTab("bridge")}>
+            Bridge / SKILL
+          </button>
+          <button className={tab === "agent" ? "tab on" : "tab"} onClick={() => setTab("agent")}>
+            Agent
+          </button>
         </nav>
       </header>
 
       {tab === "comparator" && <MazeView />}
       {tab === "tcoil" && <TCoilView />}
+      {tab === "opamp" && <OpAmpView />}
+      {tab === "process" && <ProcessView />}
+      {tab === "surrogate" && <SurrogateView />}
+      {tab === "bridge" && <BridgeView />}
+      {tab === "agent" && <AgentConsole />}
       {tab === "layout" && error && <div className="fatal">Error: {error}</div>}
       {tab === "layout" && !error && !(config && params && layout) && (
         <div className="loading">Loading…</div>

@@ -124,3 +124,62 @@ export interface TcoilData {
   curves: { none: TcoilCurve; shunt: TcoilCurve; tcoil: TcoilCurve };
   thresholdDb: number;
 }
+
+// --- Op-amp (OTA) ---
+export interface SpecRow { name: string; value: number; unit: string; target: number; pass: boolean; }
+export interface OpAmpResult {
+  feasible: boolean;
+  power_mw: number;
+  specs: SpecRow[];
+  sizing: Record<string, number>;
+  overdrives: Record<string, number>;
+}
+export interface StudyRow {
+  strategy: string; feasible: number; n: number;
+  best_mw: number; mean_mw: number; std_mw: number;
+}
+export interface OpAmpStudy { results: StudyRow[]; note: string; }
+export interface Preflight { bridge_env: boolean; spectre: boolean; ready: boolean; guidance: string[]; }
+export interface SpectreSpecs { gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number; }
+export interface SpectreEval {
+  pdk: string;
+  analytic: SpectreSpecs;
+  spectre?: SpectreSpecs;
+  status: string;
+  error?: string;
+  preflight?: Preflight;
+}
+
+// --- Process change (adapt) ---
+export interface AdaptSide {
+  layout: LayoutPayload;
+  totalArea: number;
+  deviceArea: number;
+  wirelength: number;
+  drcClean: boolean;
+  device: Record<string, number>;
+  routing: Record<string, number>;
+}
+export interface AdaptResponse {
+  overrides: Record<string, number>;
+  before: AdaptSide;
+  after: AdaptSide;
+  areaDeltaPct: number;
+  topology: { fingers: number; nets: string[] };
+}
+
+// --- Surrogate / SKILL / Bridge / Bode / Agent ---
+export interface SurrogateRound {
+  index: number; fomPred: number; fomTruth: number; predError: number;
+  holdoutRmse: number; holdoutR2: number; meets: boolean; expensiveCalls: number;
+}
+export interface SurrogateData {
+  target: number; rounds: SurrogateRound[];
+  best: { area: number; fomTruth: number };
+  expensiveCalls: number; surrogateCalls: number; savings: number;
+}
+export interface SkillData { cell: string; shapeCount: number; commands: string[]; il: string; note: string; }
+export interface BridgeCheck { name: string; ok: boolean; sample: string; }
+export interface BridgeData { checks: BridgeCheck[]; allOk: boolean; preflight: Preflight; }
+export interface BodeData { freq: number[]; magDb: number[]; phaseDeg: number[]; }
+export interface AgentResp { ok: boolean; reply?: string; error?: string; }
