@@ -1,6 +1,95 @@
 import { useEffect, useRef, useState } from "react";
-import { evalTcoil, fetchTcoil } from "../api";
-import type { TcoilCurve, TcoilData } from "../types";
+import { evalTcoil, fetchTcoil, geomTcoil } from "../api";
+import type { TcoilCurve, TcoilData, TcoilGeom } from "../types";
+
+function SpiralSVG({ geom }: { geom: TcoilGeom }) {
+  const S = 280;
+  const pad = 14;
+  const ext = Math.max(geom.dOut, 1);
+  const scale = (S - 2 * pad) / ext;
+  const tx = (x: number) => S / 2 + x * scale;
+  const ty = (y: number) => S / 2 + y * scale;
+  const d = geom.path.map((p, i) => `${i ? "L" : "M"} ${tx(p[0]).toFixed(1)} ${ty(p[1]).toFixed(1)}`).join(" ");
+  const start = geom.path[0], end = geom.path[geom.path.length - 1];
+  return (
+    <svg width={S} height={S} className="bode">
+      <rect width={S} height={S} fill="#0d1117" />
+      <path d={d} fill="none" stroke="#ce93d8" strokeWidth={Math.max(geom.width * scale, 2)}
+        strokeLinejoin="round" strokeLinecap="round" opacity={0.9} />
+      {/* terminals: A (start), B (end), center tap (mid) */}
+      <circle cx={tx(start[0])} cy={ty(start[1])} r={5} fill="#42a5f5" />
+      <circle cx={tx(end[0])} cy={ty(end[1])} r={5} fill="#3fb950" />
+      <text x={tx(start[0]) + 6} y={ty(start[1]) - 6} className="axis">A</text>
+      <text x={tx(end[0]) + 6} y={ty(end[1]) - 6} className="axis">B</text>
+      <text x={6} y={S - 8} className="axis">{geom.dOut.toFixed(0)} µm</text>
+    </svg>
+  );
+}
+
+const G0 = { turns: 3, width: 3, spacing: 2, inner: 30, r_ohm: 300, cl_ff: 30, cb: 0.14 };
+
+function CoilLayout() {
+  const [g, setG] = useState(G0);
+  const [res, setRes] = useState<TcoilGeom | null>(null);
+  const deb = useRef<number | null>(null);
+  useEffect(() => {
+    if (deb.current) window.clearTimeout(deb.current);
+    deb.current = window.setTimeout(() => { geomTcoil(g).then(setRes).catch(() => {}); }, 90);
+  }, [g]);
+
+  const sliders: [keyof typeof g, string, number, number, number][] = [
+    ["turns", "turns n", 1, 8, 0.5],
+    ["width", "trace width µm", 1, 8, 0.5],
+    ["spacing", "spacing µm", 1, 8, 0.5],
+    ["inner", "inner µm", 10, 80, 2],
+    ["r_ohm", "node R Ω", 50, 600, 10],
+    ["cl_ff", "node C_L fF", 10, 150, 5],
+  ];
+  return (
+    <section className="panel" style={{ gridColumn: "1 / -1" }}>
+      <div className="panel-title">
+        Coil layout — geometry determines L, k, and the response
+        {res && <span className={Math.abs(res.peakingDb) < 0.5 ? "badge ok" : "badge bad"}>
+          {res.bwExtension.toFixed(2)}× BW</span>}
+      </div>
+      <div className="maze-wrap">
+        {res ? <SpiralSVG geom={res} /> : <div className="loading">…</div>}
+        <div className="maze-side">
+          {res && (
+            <table className="tcoil-table">
+              <tbody>
+                <tr><td>extracted L</td><td>{res.L_nH} nH</td></tr>
+                <tr><td>coupling k</td><td>{res.k}</td></tr>
+                <tr><td>outer size</td><td>{res.dOut} µm</td></tr>
+                <tr><td>metal length</td><td>{res.wireUm} µm</td></tr>
+                <tr><td>area</td><td>{res.areaUm2} µm²</td></tr>
+                <tr><td>normalized L</td><td>{res.normL}</td></tr>
+                <tr><td>BW extension</td><td>{res.bwExtension}× </td></tr>
+                <tr><td>peaking</td><td>{res.peakingDb} dB</td></tr>
+              </tbody>
+            </table>
+          )}
+          <div className="sliders" style={{ marginTop: 10 }}>
+            {sliders.map(([key, label, lo, hi, step]) => (
+              <div className="slider-row" key={key}>
+                <label><span className="slider-name">{label}</span>
+                  <span className="slider-val">{g[key]}</span></label>
+                <input type="range" min={lo} max={hi} step={step} value={g[key]}
+                  onChange={(e) => setG({ ...g, [key]: Number(e.target.value) })} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <p className="note">
+        A symmetric square spiral (purple = metal, A/B = terminals). Inductance from
+        the modified-Wheeler formula, coupling k from the winding — so the drawn coil
+        sets the electrical (L, k). The response depends on the node it drives (R, C_L):
+        the same coil is maximally-flat on a high-Z node but over-peaks on 50 Ω.
+      </p>
+    </section>
+  );
+}
 
 const COLORS = {
   none: "#8b949e",
@@ -155,6 +244,7 @@ export default function TCoilView() {
           </div>
         </div>
       </section>
+      <CoilLayout />
     </div>
   );
 }

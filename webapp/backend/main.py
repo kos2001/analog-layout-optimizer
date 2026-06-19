@@ -700,3 +700,42 @@ def post_agent(body: AgentIn) -> dict:
         return {"ok": False, "error": _json.dumps(resp["error"])[:400]}
     msg = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
     return {"ok": True, "reply": msg}
+
+
+# --------------------------------------------------------------------------
+# T-coil physical geometry: spiral layout -> extracted L/k -> response
+# --------------------------------------------------------------------------
+class GeomIn(BaseModel):
+    turns: float = 3.0
+    width: float = 3.0
+    spacing: float = 2.0
+    inner: float = 30.0
+    r_ohm: float = 200.0
+    cl_ff: float = 40.0
+    cb: float = 0.14
+
+
+@app.post("/api/tcoil/geometry")
+def post_tcoil_geometry(body: GeomIn) -> dict:
+    from layout_opt.tcoil_geom import TCoilGeometry, evaluate_geometry, spiral_points
+    from layout_opt.tcoil import transimpedance
+    g = TCoilGeometry(turns=body.turns, width=body.width,
+                      spacing=body.spacing, inner=body.inner)
+    r = evaluate_geometry(g, r_ohm=body.r_ohm, cl_ff=body.cl_ff, cb_norm=body.cb)
+    ex = r["extract"]
+    w = np.logspace(-1.0, 1.3, 160)
+    mag = np.abs(transimpedance(r["params"], w))
+    return {
+        "path": [[round(x, 2), round(y, 2)] for x, y in spiral_points(g)],
+        "width": body.width,
+        "dOut": ex.d_out_um,
+        "L_nH": round(ex.L_nH, 3),
+        "k": ex.k,
+        "wireUm": ex.wire_um,
+        "areaUm2": ex.area_um2,
+        "normL": r["normL"] if "normL" in r else r["norm_L"],
+        "bwExtension": r["bw_extension"],
+        "peakingDb": r["peaking_db"],
+        "freq": [float(x) for x in w],
+        "magDb": [round(float(20.0 * np.log10(m + 1e-12)), 3) for m in mag],
+    }
