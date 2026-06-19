@@ -169,6 +169,42 @@ their floors) — the signature of a correct min-power solution. The model
 (`opamp.py`) is a documented square-law analytical surrogate; a real flow would
 swap it for Spectre, leaving the optimizer experiments unchanged.
 
+## Connecting a real PDK / Spectre (`spectre_backend.py`, `pdk.py`)
+
+The Spectre backend swaps the analytical OTA model for a **real Spectre AC run**
+driven through virtuoso-bridge, keeping the identical `OpAmpParams -> OpAmpSpecs`
+contract (so the optimizer/surrogate/study code is unchanged). gain/GBW/PM come
+from the AC sweep; power/slew/overdrives stay exact-given-sizing.
+
+Connecting a process = filling one `PDKConfig` (`pdk.py`) — no code changes:
+
+```python
+from layout_opt.pdk import PDKConfig
+MY_PDK = PDKConfig(
+    name="tsmcN28",
+    model_include='include "/pdk/models/spectre/toplevel.scs" section=tt',
+    nmos="nch_mac", pmos="pch_mac", l_um=0.03, vdd=0.9,
+)
+```
+
+Go-live steps:
+1. `virtuoso-bridge init user@eda-server [-J jump]` then `virtuoso-bridge start`
+   (SSH tunnel + Spectre); confirm with `virtuoso-bridge status` and
+   `python -c "from layout_opt.spectre_backend import preflight; print(preflight())"`.
+2. Evaluate one design against the PDK:
+   `spectre_evaluate(params, MY_PDK)` → measured `OpAmpSpecs`.
+3. Optimize with Spectre as ground truth: feed `make_spectre_objective(MY_PDK)`
+   to the optimizer, and use `surrogate_opt.py` to keep Spectre calls few
+   (the PoC shows ~600x fewer expensive evals).
+
+The full pipeline (render → run → parse → specs) is verified offline against a
+synthesized SimulationResult (`test_spectre_backend.py::…full_pipeline…`); only
+the actual silicon-accurate run needs a licensed server + PDK. When not
+connected, the backend raises `SpectreUnavailable` with actionable guidance.
+
+Via Hermes, the agent drives this with `alo.py preflight` and
+`alo.py spectre-eval [--model-include … --nmos … --pmos …]`.
+
 ## Going live later
 
 When a Virtuoso server is reachable (e.g. a university EDA host via the bridge's

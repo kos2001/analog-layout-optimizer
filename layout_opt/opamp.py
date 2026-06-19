@@ -108,6 +108,33 @@ def _vov(kp, wl, i):
     return math.sqrt(max(2.0 * i / (kp * wl), 1e-30))
 
 
+def ac_response(p: OpAmpParams, freqs_hz):
+    """Small-signal AC response H(jw) of the two-stage OTA over freqs (Hz).
+
+    Two-pole + RHP-zero model: H = A0 (1 - s/z) / ((1+s/p1)(1+s/p2)),
+    p1 = GBW/A0 (dominant, Miller), p2 = gm6/CL, z = gm6/Cc.
+    Returns (magnitude_dB, phase_deg) lists.
+    """
+    i1 = p.itail / 2.0
+    gm1 = _gm(KP_N, p.wl1, i1)
+    gm6 = _gm(KP_N, p.wl6, p.i6)
+    r1 = 1.0 / ((LAMBDA_N + LAMBDA_P) * i1)
+    r2 = 1.0 / ((LAMBDA_N + LAMBDA_P) * p.i6)
+    a0 = gm1 * r1 * gm6 * r2
+    gbw = gm1 / p.cc            # rad/s
+    p1 = gbw / a0              # dominant pole (rad/s)
+    p2 = gm6 / CL
+    z = gm6 / p.cc
+    mag_db, phase_deg = [], []
+    for f in freqs_hz:
+        w = 2.0 * math.pi * f
+        s = 1j * w
+        h = a0 * (1 - s / z) / ((1 + s / p1) * (1 + s / p2))
+        mag_db.append(20.0 * math.log10(abs(h) + 1e-30))
+        phase_deg.append(math.degrees(math.atan2(h.imag, h.real)))
+    return mag_db, phase_deg
+
+
 def evaluate_opamp(p: OpAmpParams) -> OpAmpSpecs:
     i1 = p.itail / 2.0
     gm1 = _gm(KP_N, p.wl1, i1)

@@ -50,9 +50,12 @@ class Design:
         return evaluate_opamp(self.params)
 
 
-def _violation(p: OpAmpParams) -> float:
-    """Total normalized spec shortfall; 0 means all specs met."""
-    s = evaluate_opamp(p)
+def _violation_from_specs(s, p: OpAmpParams) -> float:
+    """Total normalized spec shortfall for an already-evaluated spec set.
+
+    Shared by the analytical and the Spectre-backed objectives so both enforce
+    exactly the same constraints.
+    """
     v = 0.0
     v += max(0.0, (GAIN_MIN - s.gain_db) / GAIN_MIN)
     v += max(0.0, (GBW_MIN - s.gbw_hz) / GBW_MIN)
@@ -62,6 +65,11 @@ def _violation(p: OpAmpParams) -> float:
         v += max(0.0, (VOV_MIN - vov) / VOV_MIN)
         v += max(0.0, (vov - VOV_MAX) / VOV_MAX)
     return v
+
+
+def _violation(p: OpAmpParams) -> float:
+    """Total normalized spec shortfall (analytical model); 0 means feasible."""
+    return _violation_from_specs(evaluate_opamp(p), p)
 
 
 def _objective(p: OpAmpParams, feas_weight: float = 1e3) -> float:
