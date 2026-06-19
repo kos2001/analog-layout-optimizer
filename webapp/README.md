@@ -1,8 +1,9 @@
 # Web UI — visual analog layout optimizer
 
 A React + Vite + TypeScript frontend over a FastAPI backend that reuses the
-exact `layout_opt` engine. Shows the optimization **visually**, with no Virtuoso
-anywhere in the loop.
+exact `layout_opt` engine. Shows the optimization **visually**. Offline tabs run
+without Virtuoso; real Cadence operation should go through the Arcadia
+`virtuoso-bridge-lite` engine, not a second local bridge implementation.
 
 Features:
 - **Layout render** — SVG of the differential pair, colored by layer
@@ -22,14 +23,14 @@ Features:
 
 Two terminals.
 
-**Backend** (port 8000):
+**Backend** (port 8011):
 ```bash
 # from repo root, with the venv that has layout_opt + fastapi installed
-uv pip install -e ../virtuoso-bridge-lite fastapi "uvicorn[standard]" httpx numpy scipy
-python -m uvicorn webapp.backend.main:app --port 8000
+uv pip install -e ../virtuoso-bridge-lite fastapi "uvicorn[standard]" httpx numpy scipy scikit-learn
+python -m uvicorn webapp.backend.main:app --port 8011
 ```
 
-**Frontend** (port 5173, proxies /api -> 8000):
+**Frontend** (port 5173, proxies /api -> 8011):
 ```bash
 cd webapp/frontend
 npm install
@@ -40,14 +41,16 @@ npm run dev
 ## Architecture
 
 ```
- React UI  ──/api──►  FastAPI  ──►  layout_opt (generator + evaluate + optimize)
- (SVG, sliders,        (CORS,        the SAME pure-Python engine the offline
-  animation, chart)     JSON)         tests use — no logic duplicated)
+ React UI  ──/api──►  FastAPI  ──►  layout_opt application layer
+ (SVG, sliders,        (CORS,        generator + evaluate + optimize
+  animation, chart)     JSON)        no frontend logic duplication
+                              └──► Arcadia virtuoso-bridge-lite engine
+                                   when real Virtuoso/Spectre is enabled
 ```
 
 The backend's `evaluate` is the surrogate (area + geometric DRC + drive spec).
-Swapping it for a Virtuoso/Spectre-backed evaluator changes only the backend —
-the UI is unaffected.
+Swapping it for a Virtuoso/Spectre-backed evaluator changes only the backend and
+should use Arcadia `VirtuosoClient` / `SpectreSimulator`; the UI is unaffected.
 
 ## Verified
 

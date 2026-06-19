@@ -133,6 +133,77 @@ def _preflight(_args):
     return {"op": "spectre_preflight", **preflight()}
 
 
+def _bridge_smoke(args):
+    """Check the Arcadia virtuoso-bridge-lite engine boundary.
+
+    Default mode is safe/offline: it verifies that the runtime engine can be
+    imported and that the CLI is visible.  With --live, it also attempts a real
+    SKILL round-trip through the configured/running bridge.
+    """
+    import importlib.metadata
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    out = {
+        "op": "bridge_smoke",
+        "architecture": "analog-layout-optimizer application layer -> Arcadia virtuoso-bridge-lite engine",
+        "repo": _REPO,
+        "checks": {},
+    }
+
+    try:
+        import virtuoso_bridge  # type: ignore[import-not-found]
+        module_file = getattr(virtuoso_bridge, "__file__", None)
+        out["checks"]["python_import"] = {
+            "ok": True,
+            "module_file": str(Path(str(module_file)).resolve()) if module_file else "unknown",
+            "version": importlib.metadata.version("virtuoso-bridge"),
+        }
+    except Exception as e:  # noqa: BLE001
+        out["checks"]["python_import"] = {"ok": False, "error": str(e)}
+
+    venv_cli = Path(sys.executable).with_name("virtuoso-bridge")
+    cli = str(venv_cli) if venv_cli.exists() else shutil.which("virtuoso-bridge")
+    out["checks"]["cli_on_path"] = {"ok": bool(cli), "path": cli}
+    if cli:
+        hp = subprocess.run([cli, "--help"], capture_output=True, text=True, timeout=args.timeout)
+        help_text = (hp.stdout + hp.stderr)[:1000]
+        out["checks"]["cli_identity"] = {
+            "ok": "virtuoso-bridge" in help_text and "Hermes Agent" not in help_text,
+            "returncode": hp.returncode,
+            "help_head": help_text,
+        }
+    if cli and args.status:
+        p = subprocess.run([cli, "status"], capture_output=True, text=True, timeout=args.timeout)
+        out["checks"]["cli_status"] = {
+            "ok": p.returncode == 0,
+            "returncode": p.returncode,
+            "stdout_tail": p.stdout[-2000:],
+            "stderr_tail": p.stderr[-2000:],
+        }
+
+    env_path = Path(os.path.expanduser("~/.virtuoso-bridge/.env"))
+    out["checks"]["default_env"] = {"ok": env_path.exists(), "path": str(env_path)}
+
+    if args.live:
+        try:
+            from virtuoso_bridge import ExecutionStatus, VirtuosoClient  # type: ignore[import-not-found]
+            r = VirtuosoClient.from_env(timeout=args.timeout).execute_skill("1+2", timeout=args.timeout)
+            out["checks"]["live_skill"] = {
+                "ok": r.status is ExecutionStatus.SUCCESS and str(r.output).strip() == "3",
+                "status": r.status.name,
+                "output": r.output,
+                "errors": r.errors,
+            }
+        except Exception as e:  # noqa: BLE001
+            out["checks"]["live_skill"] = {"ok": False, "error": str(e)}
+
+    out["ready_offline"] = bool(out["checks"].get("python_import", {}).get("ok"))
+    out["ready_live"] = bool(out["checks"].get("live_skill", {}).get("ok")) if args.live else None
+    return out
+
+
 def _spectre_eval(args):
     # Verify ONE candidate design with real Spectre against a PDK.
     from layout_opt.opamp_opt import de_log_refine
@@ -198,6 +269,11 @@ def main() -> int:
     p.add_argument("--maxiter", type=int, default=150)
     p.set_defaults(fn=_adapt)
     p = sub.add_parser("preflight"); p.set_defaults(fn=_preflight)
+    p = sub.add_parser("bridge-smoke")
+    p.add_argument("--live", action="store_true", help="execute SKILL 1+2 through a configured/running bridge")
+    p.add_argument("--status", action="store_true", help="also run `virtuoso-bridge status` if CLI is on PATH")
+    p.add_argument("--timeout", type=int, default=10)
+    p.set_defaults(fn=_bridge_smoke)
     p = sub.add_parser("spectre-eval")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--model-include", default="")

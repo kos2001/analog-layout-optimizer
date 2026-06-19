@@ -6,6 +6,40 @@ Virtuoso, no PDK, no license needed. It demonstrates exactly which layers of an
 analog layout-optimization flow can be built and validated before any EDA tool
 is in the loop, using `virtuoso-bridge-lite`'s pure SKILL builders.
 
+## Recommended architecture
+
+This repo is the **analog optimization application layer**. Arcadia
+[`virtuoso-bridge-lite`](https://github.com/Arcadia-1/virtuoso-bridge-lite) is
+the **Cadence runtime engine** underneath it.
+
+```text
+Hermes Agent / Web UI / FastAPI
+        |
+        v
+analog-layout-optimizer application layer
+  - geometry/routing/problem models
+  - PDK config + netlist templates
+  - optimizers and surrogate-assisted loops
+  - visualization and Hermes workflows
+        |
+        v
+Arcadia virtuoso-bridge-lite engine
+  - VirtuosoClient SKILL execution
+  - SSH/jump-host/local bridge lifecycle
+  - SpectreSimulator + PSF parsing
+  - Maestro/window/snapshot diagnostics
+        |
+        v
+Remote/local Cadence Virtuoso + Spectre + PDK
+```
+
+Boundary: keep design objectives, candidate generation, surrogate logic, UI, and
+customer-specific PDK configuration in this repo. Delegate SKILL transport,
+daemon/tunnel lifecycle, Spectre invocation, PSF parsing, and Virtuoso/Maestro
+diagnostics to `virtuoso-bridge-lite`. In other words, do not grow a second
+bridge here; treat Arcadia as the pinned engine and build workflow/product value
+above it. See `docs/arcadia-integration.md` for the operating checklist.
+
 ## The cell
 
 A textbook differential pair: two transistors as `2·nf` interdigitated vertical
@@ -51,11 +85,20 @@ it in is a one-function change — see the bottom of `run_demo.py`.
 ## Run it
 
 ```bash
-# from repo root (../virtuoso-bridge-lite installed in the active venv)
-uv pip install -e ../virtuoso-bridge-lite numpy scipy pytest
+# from repo root, with Arcadia virtuoso-bridge-lite cloned adjacent to this repo
+uv pip install -e ../virtuoso-bridge-lite numpy scipy scikit-learn pytest
 
 python -m pytest -q          # 19 tests, all offline
 python run_demo.py           # end-to-end: optimize → report → emit SKILL
+```
+
+Arcadia engine smoke checks:
+
+```bash
+python verify_bridge.py
+python hermes/analog-layout-optimizer/scripts/alo.py bridge-smoke
+# once a real bridge is configured and started:
+python hermes/analog-layout-optimizer/scripts/alo.py bridge-smoke --live
 ```
 
 Demo output: converges in ~15k evals to **area 2.1010 µm², DRC-clean**, then
