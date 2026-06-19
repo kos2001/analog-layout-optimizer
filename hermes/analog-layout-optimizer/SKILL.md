@@ -24,7 +24,7 @@ transistor sizing, area-vs-DRC, routing, and passive (T-coil) optimization.
 The engine lives at `ALO_REPO` (default
 `/Users/kos2001/gitspace/virtuso_bridge/layout_opt_poc`, also at
 `github.com/kos2001/analog-layout-optimizer`). Run it with the bridge venv
-python so numpy/scipy/sklearn are available.
+python so numpy/scipy/scikit-learn are available.
 
 ## When to use
 
@@ -43,7 +43,7 @@ RTL, or signoff-grade tool replacement.
 Set up once per shell:
 
 ```bash
-PY=/Users/kos2001/gitspace/virtuso_bridge/virtuoso-bridge-lite/.venv/bin/python
+PY=/Users/kos2001/gitspace/virtuoso-bridge-lite/.venv/bin/python
 ALO=~/.hermes/skills/semiconductor-eda/analog-layout-optimizer/scripts/alo.py
 ```
 
@@ -56,6 +56,8 @@ $PY $ALO joint                 # device+routing co-optimization (full-cell area)
 $PY $ALO maze                  # comparator maze routing (wirelength, net order)
 $PY $ALO tcoil --peak 0.1      # T-coil bandwidth extension factor
 $PY $ALO preflight             # check real-Spectre readiness (bridge + license)
+$PY $ALO bridge-smoke          # check Arcadia bridge engine import/CLI/env without requiring Virtuoso
+$PY $ALO bridge-smoke --live   # if bridge is started, execute SKILL 1+2 through VirtuosoClient
 $PY $ALO spectre-eval [--model-include '…' --nmos nch_mac --pmos pch_mac]
                                # verify a candidate via REAL Spectre against a PDK
                                # (analytic vs spectre; SpectreUnavailable+guidance if not connected)
@@ -86,9 +88,26 @@ T-coil Bode plot:
 
 ```bash
 cd $ALO_REPO 2>/dev/null || cd /Users/kos2001/gitspace/virtuso_bridge/layout_opt_poc
-$PY -m uvicorn webapp.backend.main:app --port 8000 &      # API: /api/{config,maze,tcoil,joint,optimize}
+$PY -m uvicorn webapp.backend.main:app --port 8011 &      # API: /api/{config,maze,tcoil,joint,optimize}
 ( cd webapp/frontend && npm run dev )                     # UI at http://localhost:5173
 ```
+
+## Recommended architecture
+
+Use this repo as the **application layer** and Arcadia
+`virtuoso-bridge-lite` as the **runtime engine**:
+
+```text
+Hermes Agent / Web UI / FastAPI
+        -> analog-layout-optimizer application layer
+        -> Arcadia virtuoso-bridge-lite engine
+        -> remote/local Cadence Virtuoso + Spectre + PDK
+```
+
+Keep optimization, problem models, PDK config, surrogate loops, UI, and Hermes
+workflow here. Delegate SKILL transport, SSH/jump-host tunnels, daemon lifecycle,
+Spectre invocation, PSF parsing, Maestro snapshots, and window diagnostics to
+Arcadia's `virtuoso-bridge` package/CLI.
 
 ## Driving real Cadence Virtuoso/Spectre (the closed loop)
 

@@ -1,6 +1,7 @@
 # Offline PoC dependencies. No Virtuoso required.
 numpy
 scipy
+scikit-learn
 pytest
 # The repo under ../virtuoso-bridge-lite provides the SKILL string builders:
 #   uv pip install -e ../virtuoso-bridge-lite
