@@ -1,9 +1,10 @@
 # Web UI — visual analog layout optimizer
 
 A React + Vite + TypeScript frontend over a FastAPI backend that reuses the
-exact `layout_opt` engine. Shows the optimization **visually**. Offline tabs run
-without Virtuoso; real Cadence operation should go through the Arcadia
-`virtuoso-bridge-lite` engine, not a second local bridge implementation.
+exact `layout_opt` engine. Shows the optimization **visually**. Offline tabs run without Virtuoso and are the default operating mode because no
+EDA server is available. If real Cadence access is added later, it should go
+through the Arcadia `virtuoso-bridge-lite` engine, not a second local bridge
+implementation.
 
 Features:
 - **Layout render** — SVG of the differential pair, colored by layer
@@ -45,7 +46,7 @@ npm run dev
  (SVG, sliders,        (CORS,        generator + evaluate + optimize
   animation, chart)     JSON)        no frontend logic duplication
                               └──► Arcadia virtuoso-bridge-lite engine
-                                   when real Virtuoso/Spectre is enabled
+                                   only if real Virtuoso/Spectre is enabled later
 ```
 
 The backend's `evaluate` is the surrogate (area + geometric DRC + drive spec).

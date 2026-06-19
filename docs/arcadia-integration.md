@@ -1,6 +1,6 @@
 # Arcadia virtuoso-bridge-lite Integration
 
-This project should run as the analog optimization/application layer on top of Arcadia `virtuoso-bridge-lite`.
+This project runs **offline-first** as the analog optimization/application layer. Arcadia `virtuoso-bridge-lite` is kept as the optional Cadence runtime engine for a future live Virtuoso/Spectre environment. There is currently no EDA server, and that is a supported/default state.
 
 ## Verified sources
 
@@ -33,6 +33,17 @@ Delegate to Arcadia:
 
 ## Operating model
 
+Current/default mode:
+
+```text
+Hermes Agent / Web UI / FastAPI
+        -> analog-layout-optimizer application layer
+        -> offline analytical/surrogate evaluators
+        -> no EDA server required
+```
+
+Optional future live mode:
+
 ```text
 Hermes Agent / Web UI / FastAPI
         -> analog-layout-optimizer application layer
@@ -54,9 +65,9 @@ python verify_bridge.py
 python -m pytest -q
 ```
 
-## Real Cadence smoke path
+## Optional future real Cadence smoke path
 
-After the user configures a real EDA target:
+Skip this today: there is no EDA server. Run it only after the user configures a real EDA target:
 
 ```bash
 virtuoso-bridge init user@eda-host [-J user@jump-host]
@@ -66,11 +77,11 @@ python hermes/analog-layout-optimizer/scripts/alo.py bridge-smoke --live
 python hermes/analog-layout-optimizer/scripts/alo.py preflight
 ```
 
-Expected live bridge result: `execute_skill("1+2")` returns `3` through `VirtuosoClient`.
+Expected live bridge result: `execute_skill("1+2")` returns `3` through `VirtuosoClient`. Until a server exists, `bridge-smoke --live` reporting `not_configured_optional` is normal, not a blocker.
 
 ## Risk notes
 
 - Pin Arcadia version/commit before productionizing; the local clone currently reports package version `0.7.0`.
 - `~/.local/bin/virtuoso-bridge` may point to a Hermes profile wrapper on this machine, not the Arcadia CLI. Use the venv CLI at `/Users/kos2001/gitspace/virtuoso-bridge-lite/.venv/bin/virtuoso-bridge` or run through the venv Python.
-- `~/.virtuoso-bridge/.env` is absent until `virtuoso-bridge init` is run. Offline tests do not require it.
+- `~/.virtuoso-bridge/.env` is absent until `virtuoso-bridge init` is run. This is normal in the current no-EDA-server setup; offline tests do not require it.
 - PDK model/include/device names remain project/customer-specific and belong in `PDKConfig`.

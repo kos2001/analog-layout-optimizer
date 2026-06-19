@@ -14,9 +14,10 @@ metadata:
 
 ## Overview
 
-Operate an offline, **Virtuoso-free** analog design-optimization engine, and
-(when a Cadence server is reachable) drive real Virtuoso/Spectre through
-`virtuoso-bridge`. Like the [[ppa-closure-agent]] for digital PnR, this skill
+Operate an offline, **Virtuoso-free** analog design-optimization engine. There
+is currently no EDA server; that is the default supported mode. Keep Arcadia
+`virtuoso-bridge-lite` as the optional runtime engine for future real
+Virtuoso/Spectre access. Like the [[ppa-closure-agent]] for digital PnR, this skill
 does **not** replace EDA tools — it generates knob candidates, scores them
 against specs, and explains trade-offs — but for the **analog / custom** side:
 transistor sizing, area-vs-DRC, routing, and passive (T-coil) optimization.
@@ -55,9 +56,9 @@ $PY $ALO opamp-study --seeds 6 # optimizer comparison (the log-space finding)
 $PY $ALO joint                 # device+routing co-optimization (full-cell area)
 $PY $ALO maze                  # comparator maze routing (wirelength, net order)
 $PY $ALO tcoil --peak 0.1      # T-coil bandwidth extension factor
-$PY $ALO preflight             # check real-Spectre readiness (bridge + license)
-$PY $ALO bridge-smoke          # check Arcadia bridge engine import/CLI/env without requiring Virtuoso
-$PY $ALO bridge-smoke --live   # if bridge is started, execute SKILL 1+2 through VirtuosoClient
+$PY $ALO bridge-smoke          # offline-safe: check Arcadia engine import/CLI; no EDA server required
+$PY $ALO preflight             # optional future: check real-Spectre readiness (will be unready without EDA server)
+$PY $ALO bridge-smoke --live   # optional future: execute SKILL 1+2 only after bridge is configured
 $PY $ALO spectre-eval [--model-include '…' --nmos nch_mac --pmos pch_mac]
                                # verify a candidate via REAL Spectre against a PDK
                                # (analytic vs spectre; SpectreUnavailable+guidance if not connected)
@@ -101,22 +102,25 @@ Use this repo as the **application layer** and Arcadia
 Hermes Agent / Web UI / FastAPI
         -> analog-layout-optimizer application layer
         -> Arcadia virtuoso-bridge-lite engine
-        -> remote/local Cadence Virtuoso + Spectre + PDK
+        -> offline evaluators today; optional future Cadence Virtuoso + Spectre + PDK
 ```
 
 Keep optimization, problem models, PDK config, surrogate loops, UI, and Hermes
-workflow here. Delegate SKILL transport, SSH/jump-host tunnels, daemon lifecycle,
-Spectre invocation, PSF parsing, Maestro snapshots, and window diagnostics to
-Arcadia's `virtuoso-bridge` package/CLI.
+workflow here. In the current no-EDA-server setup, use offline commands and treat
+`bridge-smoke` as dependency readiness only. If a Cadence environment is added
+later, delegate SKILL transport, SSH/jump-host tunnels, daemon lifecycle, Spectre
+invocation, PSF parsing, Maestro snapshots, and window diagnostics to Arcadia's
+`virtuoso-bridge` package/CLI.
 
-## Driving real Cadence Virtuoso/Spectre (the closed loop)
+## Optional future: driving real Cadence Virtuoso/Spectre
 
 The engine's `evaluate()` / ground-truth functions are currently analytical
-surrogates. To close the loop on a real PDK, swap them for a `virtuoso-bridge`
+surrogates. Because there is no EDA server today, do not try live Cadence commands
+by default. If a real PDK/server becomes available later, swap them for a `virtuoso-bridge`
 backend (the bridge ships its own Claude/Hermes skills `virtuoso`, `spectre`,
 `optimizer`):
 
-1. Ensure `virtuoso-bridge start` is up (SSH tunnel + Virtuoso daemon) — see the
+1. Only after an EDA server exists: ensure `virtuoso-bridge start` is up (SSH tunnel + Virtuoso daemon) — see the
    bridge's AGENTS.md. `VirtuosoClient.from_env().execute_skill(...)` runs SKILL;
    `SpectreSimulator.from_env()` runs simulations.
 2. Replace the surrogate FoM with: emit the candidate (the engine already builds

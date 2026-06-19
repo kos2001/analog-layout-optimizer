@@ -184,23 +184,39 @@ def _bridge_smoke(args):
         }
 
     env_path = Path(os.path.expanduser("~/.virtuoso-bridge/.env"))
-    out["checks"]["default_env"] = {"ok": env_path.exists(), "path": str(env_path)}
+    env_exists = env_path.exists()
+    out["checks"]["default_env"] = {
+        "ok": True,
+        "configured": env_exists,
+        "path": str(env_path),
+        "status": "configured_for_live_bridge" if env_exists else "not_configured_optional_offline_mode",
+    }
 
     if args.live:
-        try:
-            from virtuoso_bridge import ExecutionStatus, VirtuosoClient  # type: ignore[import-not-found]
-            r = VirtuosoClient.from_env(timeout=args.timeout).execute_skill("1+2", timeout=args.timeout)
+        if not env_exists:
             out["checks"]["live_skill"] = {
-                "ok": r.status is ExecutionStatus.SUCCESS and str(r.output).strip() == "3",
-                "status": r.status.name,
-                "output": r.output,
-                "errors": r.errors,
+                "ok": False,
+                "status": "not_configured_optional",
+                "error": "No ~/.virtuoso-bridge/.env. This is expected when no EDA/Virtuoso server is available.",
             }
-        except Exception as e:  # noqa: BLE001
-            out["checks"]["live_skill"] = {"ok": False, "error": str(e)}
+        else:
+            try:
+                from virtuoso_bridge import ExecutionStatus, VirtuosoClient  # type: ignore[import-not-found]
+                r = VirtuosoClient.from_env(timeout=args.timeout).execute_skill("1+2", timeout=args.timeout)
+                out["checks"]["live_skill"] = {
+                    "ok": r.status is ExecutionStatus.SUCCESS and str(r.output).strip() == "3",
+                    "status": r.status.name,
+                    "output": r.output,
+                    "errors": r.errors,
+                }
+            except Exception as e:  # noqa: BLE001
+                out["checks"]["live_skill"] = {"ok": False, "status": "attempted_but_failed", "error": str(e)}
 
     out["ready_offline"] = bool(out["checks"].get("python_import", {}).get("ok"))
     out["ready_live"] = bool(out["checks"].get("live_skill", {}).get("ok")) if args.live else None
+    out["operating_mode"] = "offline_first_no_eda_server_required"
+    if args.live and out["ready_live"]:
+        out["operating_mode"] = "live_cadence_bridge"
     return out
 
 

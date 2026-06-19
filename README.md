@@ -8,9 +8,10 @@ is in the loop, using `virtuoso-bridge-lite`'s pure SKILL builders.
 
 ## Recommended architecture
 
-This repo is the **analog optimization application layer**. Arcadia
-[`virtuoso-bridge-lite`](https://github.com/Arcadia-1/virtuoso-bridge-lite) is
-the **Cadence runtime engine** underneath it.
+This repo is **offline-first**: it runs today without an EDA server, Virtuoso,
+PDK, or license. It is the **analog optimization application layer**. Arcadia
+[`virtuoso-bridge-lite`](https://github.com/Arcadia-1/virtuoso-bridge-lite) stays
+underneath as the optional Cadence runtime engine for a future live setup.
 
 ```text
 Hermes Agent / Web UI / FastAPI
@@ -30,15 +31,15 @@ Arcadia virtuoso-bridge-lite engine
   - Maestro/window/snapshot diagnostics
         |
         v
-Remote/local Cadence Virtuoso + Spectre + PDK
+Optional future: remote/local Cadence Virtuoso + Spectre + PDK
 ```
 
 Boundary: keep design objectives, candidate generation, surrogate logic, UI, and
-customer-specific PDK configuration in this repo. Delegate SKILL transport,
-daemon/tunnel lifecycle, Spectre invocation, PSF parsing, and Virtuoso/Maestro
-diagnostics to `virtuoso-bridge-lite`. In other words, do not grow a second
-bridge here; treat Arcadia as the pinned engine and build workflow/product value
-above it. See `docs/arcadia-integration.md` for the operating checklist.
+customer-specific PDK configuration in this repo. Offline mode is the default and
+fully supported. If a live Cadence environment exists later, delegate SKILL
+transport, daemon/tunnel lifecycle, Spectre invocation, PSF parsing, and
+Virtuoso/Maestro diagnostics to `virtuoso-bridge-lite`; do not grow a second
+bridge here. See `docs/arcadia-integration.md` for the operating checklist.
 
 ## The cell
 
@@ -72,7 +73,10 @@ The optimum is analytically known (every parameter is pushed to its binding
 lower bound), so the test suite proves generator + evaluator + optimizer are
 *jointly* correct — without Virtuoso ever running.
 
-## What is deferred to Virtuoso (cannot be faked offline)
+## What is deferred to optional future Virtuoso access
+
+No EDA server is required for this repo's current operating mode. If a live
+Cadence environment becomes available later, it would be used for:
 
 - Whether the emitted SKILL produces **valid geometry in the real PDK**
 - **Real DRC / LVS** against the PDK deck
@@ -92,12 +96,12 @@ python -m pytest -q          # 19 tests, all offline
 python run_demo.py           # end-to-end: optimize → report → emit SKILL
 ```
 
-Arcadia engine smoke checks:
+Arcadia engine smoke checks (safe without an EDA server):
 
 ```bash
 python verify_bridge.py
 python hermes/analog-layout-optimizer/scripts/alo.py bridge-smoke
-# once a real bridge is configured and started:
+# optional future only, when a real bridge is configured and started:
 python hermes/analog-layout-optimizer/scripts/alo.py bridge-smoke --live
 ```
 
