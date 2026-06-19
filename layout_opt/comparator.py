@@ -1,45 +1,42 @@
-"""StrongARM comparator routing scenario for the maze router.
+"""Comparator routing scenario for the maze router — congested on purpose.
 
 A clocked tail device, a differential input pair, and a cross-coupled latch
-driving OUTP/OUTN. Devices are blockages on the routing grid; each net lists its
-pin cells. A 1-cell pinch in the central channel makes the two outputs contend,
-so net order changes the total wirelength (a discrete routing optimization).
+driving OUTP/OUTN. Devices are blockages on the routing grid. The two outputs
+must cross between the left and right halves, which are separated by a wall with
+only a SHORT passage (11,8) and a LONG detour passage (11,17). Both outputs
+prefer the short passage, so whichever net is routed first takes it and the
+other must take the long detour — net **order** changes the total wirelength a
+lot. The nets are listed in a deliberately poor order so the naive (as-given)
+ordering is clearly suboptimal vs. the optimizer's choice.
 """
 
 from __future__ import annotations
 
 from .maze import Grid
 
-W, H = 31, 22
+W, H = 24, 20
 
 
 def build_comparator() -> tuple[Grid, dict[str, list[tuple[int, int]]]]:
-    """Return (grid, nets) for the comparator routing problem."""
+    """Return (grid, nets) for the (congested) comparator routing problem."""
     g = Grid(W, H)
 
-    # Transistor active areas as routing blockages (keep-outs on this layer).
-    g.block_rect(12, 1, 18, 3)    # tail / clock device (top center)
-    g.block_rect(6, 6, 12, 9)     # input pair M1 (left)
-    g.block_rect(18, 6, 24, 9)    # input pair M2 (right)
-    g.block_rect(6, 13, 12, 16)   # latch L (lower left)
-    g.block_rect(18, 13, 24, 16)  # latch R (lower right)
-    # Side margins below the input pair are blocked: nets heading to the bottom
-    # pads must funnel through the central channel (cols 13-17).
-    g.block_rect(0, 11, 4, 21)
-    g.block_rect(26, 11, 30, 21)
-    # 1-cell pinch: the only passage from drain row 10 into the lower channel is
-    # (15, 11); both outputs contend for it, so net order changes the total.
-    g.block_rect(13, 11, 14, 11)
-    g.block_rect(16, 11, 17, 11)
+    # Central wall splitting left/right halves, open ONLY at the short passage
+    # (11, 8) and the long detour passage (11, 17).
+    g.block_rect(11, 0, 11, 7)
+    g.block_rect(11, 9, 11, 16)
+    g.block_rect(11, 18, 11, 19)
+    # Transistor active areas (keep-outs) constraining the routes.
+    g.block_rect(3, 3, 8, 6)      # input pair M1
+    g.block_rect(15, 3, 20, 6)    # input pair M2
 
+    # Listed in a deliberately suboptimal order (naive == this order).
     nets = {
-        "CLK":  [(15, 0), (15, 4)],                 # clock pad -> tail gate
-        "TAIL": [(11, 4), (19, 4), (15, 4)],        # tail node -> both input sources
-        "VINP": [(0, 7), (5, 7)],                   # left input pad -> M1 gate
-        "VINN": [(30, 7), (25, 7)],                 # right input pad -> M2 gate
-        # Outputs cross in the shared channel: left node -> right pad and vice
-        # versa, so on one layer the net routed second must detour.
-        "OUTN": [(13, 12), (13, 10), (16, 21)],     # latch-L node -> M1 drain -> bottom-RIGHT pad
-        "OUTP": [(17, 12), (17, 10), (14, 21)],     # latch-R node -> M2 drain -> bottom-LEFT pad
+        "TAIL": [(13, 1), (20, 1)],        # local (top-right)
+        "OUTP": [(5, 10), (18, 10)],       # crosses L<->R; wants the short passage
+        "OUTN": [(2, 8), (20, 8)],         # crosses L<->R; also wants it
+        "VINP": [(0, 12), (4, 12)],        # local (left)
+        "VINN": [(23, 12), (19, 12)],      # local (right)
+        "CLK":  [(2, 1), (9, 1)],          # local (top-left)
     }
     return g, nets
