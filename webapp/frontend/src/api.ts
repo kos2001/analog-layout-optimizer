@@ -106,3 +106,15 @@ export async function askAgent(prompt: string): Promise<AgentResp> {
     body: JSON.stringify({ prompt }),
   }));
 }
+
+import type { TcoilGeom } from "./types";
+
+export async function geomTcoil(b: {
+  turns: number; width: number; spacing: number; inner: number;
+  r_ohm: number; cl_ff: number; cb: number;
+}): Promise<TcoilGeom> {
+  return jsonOrThrow<TcoilGeom>(await fetch("/api/tcoil/geometry", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(b),
+  }));
+}

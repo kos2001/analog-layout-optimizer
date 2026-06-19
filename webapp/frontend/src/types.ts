@@ -183,3 +183,12 @@ export interface BridgeCheck { name: string; ok: boolean; sample: string; }
 export interface BridgeData { checks: BridgeCheck[]; allOk: boolean; preflight: Preflight; }
 export interface BodeData { freq: number[]; magDb: number[]; phaseDeg: number[]; }
 export interface AgentResp { ok: boolean; reply?: string; error?: string; }
+
+// --- T-coil physical geometry ---
+export interface TcoilGeom {
+  path: [number, number][];
+  width: number; dOut: number; L_nH: number; k: number;
+  wireUm: number; areaUm2: number; normL: number;
+  bwExtension: number; peakingDb: number;
+  freq: number[]; magDb: number[];
+}
