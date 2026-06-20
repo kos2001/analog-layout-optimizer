@@ -127,6 +127,56 @@ function SignoffPanel({ data }: { data: FlowData }) {
   );
 }
 
+function PostLayoutPanel({ data }: { data: FlowData }) {
+  const { t } = useT();
+  const pl = data.postlayout;
+  const row = (label: string, pre: number, post: number, unit: string, lowerWorse = true) => {
+    const degraded = lowerWorse ? post < pre - 0.05 : post > pre + 0.05;
+    return (
+      <tr>
+        <td>{label}</td>
+        <td>{pre}{unit}</td>
+        <td style={{ color: degraded ? "var(--bad)" : "var(--ok)" }}>{post}{unit}</td>
+      </tr>
+    );
+  };
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", margin: "0 0 12px", background: "#0d1117" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 13 }}>{t("flow.post.title")}</strong>
+        <span className={pl.stable ? "badge ok" : "badge bad"} style={{ fontSize: 12 }}>
+          {pl.stable ? t("flow.post.stable") : t("flow.post.unstable")}
+        </span>
+        <span style={{ fontSize: 12, color: pl.deltaPM < -10 ? "var(--bad)" : "var(--muted)" }}>
+          ΔPM {pl.deltaPM}°
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginTop: 8 }}>
+        <table className="tcoil-table" style={{ fontSize: 12, maxWidth: 320 }}>
+          <thead><tr><th></th><th>{t("flow.post.schem")}</th><th>{t("flow.post.post")}</th></tr></thead>
+          <tbody>
+            {row("gain", pl.pre.gain_db, pl.post.gain_db, " dB", false)}
+            {row("GBW", pl.pre.gbw_mhz, pl.post.gbw_mhz, " MHz")}
+            {row("PM", pl.pre.pm_deg, pl.post.pm_deg, "°")}
+          </tbody>
+        </table>
+        <div className="metrics" style={{ flexDirection: "column", gap: 6, fontSize: 12 }}>
+          <strong style={{ fontSize: 12, color: "var(--muted)" }}>{t("flow.post.critical")}</strong>
+          {Object.entries(pl.critical).map(([net, p]) => (
+            <span key={net} style={{ color: "var(--muted)" }}>
+              <b style={{ color: "var(--text)" }}>{net}</b>: wl {p.wirelength}, {p.C_fF} fF, {p.R_ohm} Ω
+            </span>
+          ))}
+          {pl.post.p_n2_mhz != null && (
+            <span style={{ color: "var(--muted)" }}>n2 parasitic pole ≈ {pl.post.p_n2_mhz} MHz</span>
+          )}
+        </div>
+      </div>
+      <p className="note" style={{ marginTop: 8 }}>{t("flow.post.note")}</p>
+    </div>
+  );
+}
+
 export default function FlowView() {
   const { t } = useT();
   const [place, setPlace] = useState<"sa" | "random">("sa");
@@ -163,9 +213,8 @@ export default function FlowView() {
           <button className={showDrc ? "" : "secondary"} onClick={() => setShowDrc((s) => !s)}>{t("flow.drc.toggle")}</button>
         </div>
 
-        {data && (
-          <SignoffPanel data={data} />
-        )}
+        {data && <SignoffPanel data={data} />}
+        {data && <PostLayoutPanel data={data} />}
 
         {busy || !data || !r ? <div className="loading">{t("flow.running")}</div> : (
           <div className="maze-wrap">

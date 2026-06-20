@@ -18,6 +18,7 @@ from .mlroute import Grid3, negotiated_route3
 from .schematic import CORE_NAMES, PORT_NAMES, Schematic, two_stage_ota
 from . import drc as _drc
 from . import signoff as _signoff
+from . import parasitics as _par
 
 W, H = 40, 28                      # placement / routing grid (cells)
 
@@ -180,4 +181,5 @@ def run_flow(place: str = "sa", seed: int = 0) -> dict:
                        for c in comps],
         "routing": routing,
         "signoff": signoff,
+        "postlayout": _par.post_layout_from_routing(routing),
     }

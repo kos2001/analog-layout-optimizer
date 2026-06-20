@@ -251,6 +251,16 @@ export interface Signoff {
   drcErrors: number;
   drcWarnings: number;
 }
+export interface PostLayoutSpec { gain_db: number; gbw_mhz: number; pm_deg: number; p_n2_mhz?: number | null; }
+export interface NetParasitic { R_ohm: number; C_fF: number; wirelength: number; vias: number; coupling: number; }
+export interface PostLayout {
+  pre: PostLayoutSpec;
+  post: PostLayoutSpec;
+  deltaPM: number;
+  critical: Record<string, NetParasitic>;
+  parasitics: Record<string, NetParasitic>;
+  stable: boolean;
+}
 export interface FlowData {
   width: number; height: number; layers: number; place: string;
   hpwl: number;
@@ -258,6 +268,7 @@ export interface FlowData {
   components: FlowComponent[];
   routing: FlowRouting;
   signoff: Signoff;
+  postlayout: PostLayout;
 }
 
 // --- T-coil ---
