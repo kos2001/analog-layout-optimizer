@@ -436,10 +436,10 @@ def get_flow_gds(place: str = "sa", seed: int = 0) -> dict:
 
 
 @app.get("/api/lvs")
-def get_lvs() -> dict:
-    """Transistor-level layout synthesis + real KLayout LVS (current mirror)."""
-    from layout_opt.klayout_lvs import lvs_current_mirror
-    return lvs_current_mirror()
+def get_lvs(cell: str = "ota") -> dict:
+    """Transistor-level layout synthesis + real KLayout LVS (full OTA or current mirror)."""
+    from layout_opt.klayout_lvs import lvs_current_mirror, lvs_ota
+    return lvs_ota() if cell == "ota" else lvs_current_mirror()
 
 
 @app.get("/api/flow/drc-klayout")
