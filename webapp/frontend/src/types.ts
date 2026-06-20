@@ -270,6 +270,18 @@ export interface FlowData {
   signoff: Signoff;
   postlayout: PostLayout;
 }
+export interface FlowStage { name: string; status: string; detail: string; }
+export interface FlowSizing {
+  feasible: boolean; gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number;
+  wl1: number; wl6: number; itail_uA: number; cc_pF: number;
+}
+export interface FlowSilicon { model: string; gain_db: number; gbw_mhz: number; pm_deg: number; }
+export interface FullFlowData extends FlowData {
+  stages: FlowStage[];
+  verdict: string;
+  sizing: FlowSizing;
+  silicon: FlowSilicon | null;
+}
 
 // --- T-coil ---
 export interface TcoilCurve {

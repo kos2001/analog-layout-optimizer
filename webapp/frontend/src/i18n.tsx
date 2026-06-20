@@ -19,7 +19,20 @@ const S: Record<string, { en: string; ko: string }> = {
   "tab.complex": { en: "Complex cases", ko: "복잡 사례" },
   "tab.ppa": { en: "PPA", ko: "PPA" },
   "tab.flow": { en: "Schematic → P&R", ko: "Schematic → P&R" },
+  "tab.fullflow": { en: "Full flow", ko: "전체 플로우" },
   "loading": { en: "Loading…", ko: "불러오는 중…" },
+
+  // end-to-end one-click flow
+  "ff.title": { en: "End-to-end flow — one click", ko: "End-to-end 플로우 — 원클릭" },
+  "ff.note": {
+    en: "Runs the whole pipeline in one shot: size the OTA (DE), build the schematic netlist, place (SA), route (negotiated multi-layer), sign off (DRC + LVS + connectivity), extract parasitics and re-simulate, optionally verify on SKY130 silicon.",
+    ko: "전체 파이프라인을 한 번에 실행: OTA 사이징(DE) → 스키매틱 netlist → 배치(SA) → 배선(negotiated 다층) → sign-off(DRC+LVS+연결성) → 기생성분 추출·재시뮬 → (옵션) SKY130 실리콘 검증." },
+  "ff.run": { en: "Run full flow", ko: "전체 플로우 실행" },
+  "ff.running": { en: "Running pipeline…", ko: "파이프라인 실행 중…" },
+  "ff.sky130": { en: "verify on SKY130 silicon", ko: "SKY130 실리콘 검증 포함" },
+  "ff.sky130.slow": { en: "(adds a real ngspice run — slower)", ko: "(실제 ngspice 실행 — 다소 느림)" },
+  "ff.verdict.pass": { en: "PASS — physical sign-off clean", ko: "PASS — 물리 검증 통과" },
+  "ff.hint": { en: "Click Run to execute the complete schematic→silicon flow.", ko: "실행을 누르면 schematic→실리콘 전 과정이 한 번에 돕니다." },
 
   // schematic -> placement -> routing flow
   "flow.title": { en: "Schematic → placement → routing (one netlist)", ko: "Schematic → 배치 → 배선 (하나의 netlist)" },
