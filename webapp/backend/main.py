@@ -435,6 +435,14 @@ def get_flow_gds(place: str = "sa", seed: int = 0) -> dict:
             "bytes": len(data), "stats": stats}
 
 
+@app.get("/api/flow/drc-klayout")
+def get_flow_drc_klayout(place: str = "sa", seed: int = 0) -> dict:
+    """Real DRC on the exported GDS with the KLayout engine (met1/met2 width+space)."""
+    from layout_opt.klayout_drc import run_drc_on_flow
+    place = place if place in ("sa", "random") else "sa"
+    return run_drc_on_flow(_flow.run_flow(place=place, seed=seed))
+
+
 @app.get("/api/pvt")
 def get_pvt(seed: int = 0, full: bool = False) -> dict:
     """PVT corner sweep on real SKY130 silicon (slow: ~15-18 s per corner)."""

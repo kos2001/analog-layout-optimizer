@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchFlow } from "../api";
 import { useT } from "../i18n";
 import type { FlowData } from "../types";
-import { fetchGds } from "../api";
+import { fetchGds, fetchKlayoutDrc } from "../api";
 import RouteGrid, { netColorFactory } from "./RouteGrid";
 
 function SignoffPanel({ data }: { data: FlowData }) {
@@ -97,6 +97,7 @@ export default function FlowView() {
   const [hover, setHover] = useState<string | null>(null);
   const [showDrc, setShowDrc] = useState(true);
   const [gdsNote, setGdsNote] = useState<string | null>(null);
+  const [kdrc, setKdrc] = useState<string | null>(null);
 
   useEffect(() => {
     setBusy(true); setErr(null);
@@ -115,6 +116,16 @@ export default function FlowView() {
       const s = g.stats;
       setGdsNote(`${g.filename}: ${s.polygons} polygons · ${s.counts.metal} metal / ${s.counts.via} vias / ${s.counts.device} devices · ${s.area_um2} µm² · ${(g.bytes / 1024).toFixed(1)} KB · layers ${s.layers.map((l) => `${l.layer}/${l.datatype}`).join(", ")}`);
     } catch (e) { setGdsNote(String(e)); }
+  };
+
+  const realDrc = async () => {
+    setKdrc("running KLayout DRC…");
+    try {
+      const d = await fetchKlayoutDrc(place, seed);
+      if (!d.available) { setKdrc(d.error || "KLayout unavailable"); return; }
+      const per = (d.layers || []).map((l) => `${l.layer} ${l.width_violations}w/${l.space_violations}s`).join(" · ");
+      setKdrc(`${d.tool}: ${d.clean ? "clean ✓" : `${d.total} violations`} — ${per} (real engine vs grid DRC; flags the same corner regions)`);
+    } catch (e) { setKdrc(String(e)); }
   };
 
   if (err) return <div className="fatal">Error: {err}</div>;
@@ -137,8 +148,10 @@ export default function FlowView() {
           <button className="secondary" onClick={() => setSeed(Math.floor(Math.random() * 1e6))}>{t("flow.rerun")}</button>
           <button className={showDrc ? "" : "secondary"} onClick={() => setShowDrc((s) => !s)}>{t("flow.drc.toggle")}</button>
           <button className="secondary" onClick={exportGds} disabled={busy}>{t("flow.gds")}</button>
+          <button className="secondary" onClick={realDrc} disabled={busy}>{t("flow.kdrc")}</button>
         </div>
         {gdsNote && <p className="note" style={{ marginTop: 0 }}>{gdsNote}</p>}
+        {kdrc && <p className="note" style={{ marginTop: 0 }}>{kdrc}</p>}
 
         {data && <SignoffPanel data={data} />}
         {data && <PostLayoutPanel data={data} />}

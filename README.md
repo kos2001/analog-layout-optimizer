@@ -120,8 +120,19 @@ label per device. The file opens in **KLayout / Magic** and can be DRC'd against
 the SKY130 deck — the bridge from the in-house grid sign-off to real-tool
 verification. Schematic→P&R tab → **Export GDS**, or `alo.py gds`.
 
-Next fidelity step (researched, not yet wired): swap the grid DRC/LVS for
-**KLayout/Magic DRC** and **Netgen LVS** on this GDS against the SKY130 deck.
+### Real DRC with KLayout (`klayout_drc.py`)
+
+The exported GDS is checked by **KLayout's actual geometric DRC engine** (pip
+`klayout`, no GUI): met1/met2 min-width and min-spacing with SKY130 rules
+(0.14 µm). It **cross-validates** the in-house grid DRC — both flag the same
+corner/notch regions, now at true geometry. Schematic→P&R tab → **Real DRC
+(KLayout)**, `alo.py klayout-drc`, or `/api/flow/drc-klayout`.
+
+Honest scope: this is **metal-layer geometric DRC**. Full device-level DRC
+(poly/diff/well/contact) and **Netgen LVS** need a transistor-level layout
+(real devices, contacts, wells) — the abstract grid router doesn't emit one, so
+those are a separate layout-synthesis effort, not a check on this GDS. The
+in-house connectivity LVS (`signoff.py`) is the right fidelity for this stage.
 
 ### Real SKY130 silicon (`ngspice_backend.py`)
 

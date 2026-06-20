@@ -185,3 +185,8 @@ import type { GdsExport } from "./types";
 
 export const fetchGds = (place: "sa" | "random", seed = 0) =>
   fetch(`/api/flow/gds?place=${place}&seed=${seed}`).then((r) => r.json() as Promise<GdsExport>);
+
+import type { KlayoutDrc } from "./types";
+
+export const fetchKlayoutDrc = (place: "sa" | "random", seed = 0) =>
+  fetch(`/api/flow/drc-klayout?place=${place}&seed=${seed}`).then((r) => r.json() as Promise<KlayoutDrc>);
