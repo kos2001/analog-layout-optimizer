@@ -22,6 +22,7 @@ Usage:
   python alo.py ngspice-eval [--model sky130] # verify OTA on real SKY130 silicon
   python alo.py pvt          [--full]        # SKY130 PVT corner analysis (worst-case)
   python alo.py gds          [--out F.gds]   # export placed+routed OTA to GDSII
+  python alo.py klayout-drc                  # REAL KLayout DRC on the exported GDS
 """
 
 from __future__ import annotations
@@ -370,6 +371,14 @@ def _gds(args):
     return {"op": "gds", **stats}
 
 
+def _klayout_drc(args):
+    """Run REAL KLayout DRC (met1/met2 width+space) on the exported GDS."""
+    from layout_opt.placement import run_flow
+    from layout_opt.klayout_drc import run_drc_on_flow
+    f = run_flow(place=args.place, seed=args.seed)
+    return {"op": "klayout_drc", **run_drc_on_flow(f)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Analog Layout Optimizer JSON CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -423,6 +432,9 @@ def main() -> int:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", default="ota.gds", help="output GDS path")
     p.set_defaults(fn=_gds)
+    p = sub.add_parser("klayout-drc", help="real KLayout DRC (met1/met2) on the exported GDS")
+    p.add_argument("--place", choices=["sa", "random"], default="sa")
+    p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_klayout_drc)
     args = ap.parse_args()
     print(json.dumps(args.fn(args), indent=2))
     return 0
