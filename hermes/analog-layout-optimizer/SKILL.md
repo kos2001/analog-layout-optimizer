@@ -64,6 +64,8 @@ $PY $ALO scenario macro_power_grid   # routing-algo comparison: fixed vs best-or
                                # PathFinder (also: bus_channel, diff_pair); shows DRC
 $PY $ALO ngspice-eval [--model sky130]  # verify OTA on REAL ngspice; --model sky130 =
                                # real SkyWater SKY130 BSIM silicon (needs PDK_ROOT)
+$PY $ALO pvt [--full]          # SKY130 PVT corner analysis: worst-case gain/GBW/PM
+                               # across process/voltage/temp (slow, ~15 s/corner)
 $PY $ALO bridge-smoke          # offline-safe: check Arcadia engine import/CLI; no EDA server required
 $PY $ALO preflight             # optional future: check real-Spectre readiness (will be unready without EDA server)
 $PY $ALO bridge-smoke --live   # optional future: execute SKILL 1+2 only after bridge is configured
