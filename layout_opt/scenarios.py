@@ -23,6 +23,7 @@ from itertools import permutations
 
 from .maze import Cell, Grid, route_diff_pair
 from .mlroute import Cell3, Grid3, route_all3, negotiated_route3
+from . import drc as _drc
 
 
 # --------------------------------------------------------------------------
@@ -171,6 +172,7 @@ def _ml_payload(g: Grid3, nets: dict[str, list[Cell3]], algo: str) -> dict:
                    overused=len(s.overused))
     else:
         out["order"] = order
+    out["drc"] = _drc.payload(out["nets"])
     return out
 
 

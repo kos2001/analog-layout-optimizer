@@ -140,6 +140,16 @@ export interface ScenarioNet {
   vias?: number;
   routed: boolean;
 }
+export interface DRCViolation {
+  rule: string; nets: string[]; cells: number[][]; message: string;
+}
+export interface DRCReport {
+  clean: boolean;
+  counts: Record<string, number>;
+  total: number;
+  violations: DRCViolation[];
+  checkedRules: string[];
+}
 export interface ScenarioAlgo {
   algo: string;
   ms: number;
@@ -151,6 +161,7 @@ export interface ScenarioAlgo {
   iterations?: number;
   converged?: boolean;
   overused?: number;
+  drc?: DRCReport;
 }
 export interface DiffVariant {
   matched: boolean;
@@ -220,6 +231,25 @@ export interface FlowRouting {
   converged: boolean;
   iterations: number;
   nets: Record<string, ScenarioNet>;
+  drc: DRCReport;
+}
+export interface SignoffCheck { name: string; status: string; detail: string; }
+export interface SignoffLVS {
+  clean: boolean;
+  opens: { net: string; components: number }[];
+  shorts: { nets: string[] }[];
+  floating: string[];
+  nDevicesChecked: number;
+  nSchematicNets: number;
+  nLayoutNodes: number;
+}
+export interface Signoff {
+  verdict: string;
+  checks: SignoffCheck[];
+  drc: DRCReport;
+  lvs: SignoffLVS;
+  drcErrors: number;
+  drcWarnings: number;
 }
 export interface FlowData {
   width: number; height: number; layers: number; place: string;
@@ -227,6 +257,7 @@ export interface FlowData {
   netlist: Record<string, string[]>;
   components: FlowComponent[];
   routing: FlowRouting;
+  signoff: Signoff;
 }
 
 // --- T-coil ---

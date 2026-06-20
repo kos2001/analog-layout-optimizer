@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from .interactive import Component
 from .mlroute import Grid3, negotiated_route3
 from .schematic import CORE_NAMES, PORT_NAMES, Schematic, two_stage_ota
+from . import drc as _drc
+from . import signoff as _signoff
 
 W, H = 40, 28                      # placement / routing grid (cells)
 
@@ -140,26 +142,34 @@ def _grid3_nets(comps: list[Component]):
 def route_placement(comps: list[Component]) -> dict:
     g, nets = _grid3_nets(comps)
     sol = negotiated_route3(g, nets)
+    net_payload = {n: {"pins": [list(p) for p in nets[n]],
+                       "cells": [list(c) for c in sorted(r.cells)],
+                       "wirelength": r.wirelength, "vias": r.vias, "routed": r.routed}
+                   for n, r in sol.routes.items()}
     return {
         "blocked": [list(c) for c in sorted(g.blocked)],
         "netNames": list(nets.keys()),
         "totalWirelength": sol.total_wirelength, "totalVias": sol.total_vias,
         "failed": sol.failed, "converged": sol.converged, "iterations": sol.iterations,
-        "nets": {n: {"pins": [list(p) for p in nets[n]],
-                     "cells": [list(c) for c in sorted(r.cells)],
-                     "wirelength": r.wirelength, "vias": r.vias, "routed": r.routed}
-                 for n, r in sol.routes.items()},
+        "nets": net_payload,
+        "drc": _drc.payload(net_payload),
     }
 
 
 def run_flow(place: str = "sa", seed: int = 0) -> dict:
-    """Schematic -> placement -> routing, end to end."""
+    """Schematic -> placement -> routing -> sign-off, end to end."""
     sch = two_stage_ota()
     pos = sa_place(sch, seed) if place == "sa" else random_place(sch, seed)
     comps = sch.to_components(pos)
     routing = route_placement(comps)
     netlist = {net: [f"{d}.{t}" for d, t in conns]
                for net, conns in sch.nets().items()}
+    # Per-terminal pin list (device terminal + its net + layout cell) for LVS.
+    lvs_pins = []
+    for c in comps:
+        for i, (net, cell) in enumerate(c.abs_pins()):
+            lvs_pins.append({"id": f"{c.id}.{net}#{i}", "net": net, "cell": list(cell)})
+    signoff = _signoff.run_signoff(lvs_pins, routing)
     return {
         "width": W, "height": H, "layers": 2, "place": place,
         "hpwl": hpwl(sch, pos),
@@ -169,4 +179,5 @@ def run_flow(place: str = "sa", seed: int = 0) -> dict:
                         "pins": [{"net": p.net, "dx": p.dx, "dy": p.dy} for p in c.pins]}
                        for c in comps],
         "routing": routing,
+        "signoff": signoff,
     }

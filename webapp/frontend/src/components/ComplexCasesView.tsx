@@ -112,6 +112,12 @@ function MultiNet({ data }: { data: ScenarioData }) {
                 {a.iterations} iters · {a.converged ? "converged ✓" : `over ${a.overused}`}
               </span></div>
           )}
+          {a.drc && (
+            <div><span className="metric-label">DRC</span>
+              <span className="metric-value" style={{ fontSize: 12, color: a.drc.clean ? "var(--ok)" : "var(--bad)" }}>
+                {a.drc.clean ? "clean ✓" : `${a.drc.total} (short ${a.drc.counts.short}, corner ${a.drc.counts.corner}, via ${a.drc.counts.via_spacing})`}
+              </span></div>
+          )}
         </div>
         <p className="note" style={{ marginTop: 4 }}>{data.info.desc}</p>
         <p className="note">
