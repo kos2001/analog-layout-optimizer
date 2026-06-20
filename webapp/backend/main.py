@@ -34,6 +34,9 @@ from layout_opt.optimize import optimize_trajectory
 from layout_opt.joint import optimize_joint_trajectory
 from layout_opt.comparator import build_comparator
 from layout_opt.maze import route_all, optimize_net_order
+from layout_opt.interactive import (
+    GRID_W, GRID_H, default_floorplan, route_components, components_from_payload,
+)
 from layout_opt.tcoil import (
     TCoilParams,
     bandwidth,
@@ -345,6 +348,29 @@ def get_maze() -> dict:
         "optimized": _maze_solution_payload(grid, nets, best),
         "worstWirelength": worst.total_wirelength,
     }
+
+
+# --------------------------------------------------------------------------
+# Interactive floorplan: drag components -> dynamic maze routing
+# --------------------------------------------------------------------------
+@app.get("/api/floorplan/scenario")
+def get_floorplan_scenario() -> dict:
+    """Default comparator placement + its initial routing."""
+    return route_components(GRID_W, GRID_H, default_floorplan(), optimize=True)
+
+
+class FloorplanIn(BaseModel):
+    width: int = GRID_W
+    height: int = GRID_H
+    components: list[dict]
+    optimize: bool = False
+
+
+@app.post("/api/floorplan/route")
+def post_floorplan_route(body: FloorplanIn) -> dict:
+    """Re-route an arbitrary placement (called on every drag)."""
+    comps = components_from_payload(body.components)
+    return route_components(body.width, body.height, comps, optimize=body.optimize)
 
 
 # --------------------------------------------------------------------------
@@ -757,3 +783,31 @@ def post_process_effects(body: EffectsIn) -> dict:
     )
     ov = ProcessOverrides(body.overrides) if body.overrides else parse_process_nl(body.nl)
     return process_effects(ov, body.tech or None, maxiter=120)
+
+
+# --------------------------------------------------------------------------
+# Open-source closed loop: verify a candidate with ngspice (vs analytic)
+# --------------------------------------------------------------------------
+@app.get("/api/opamp/ngspice-eval")
+def get_opamp_ngspice_eval(seed: int = 0) -> dict:
+    from layout_opt.ngspice_backend import (
+        GENERIC_NGSPICE, NgspiceUnavailable, ngspice_available, ngspice_evaluate,
+    )
+    cand = de_log_refine(seed=seed).params
+    a = evaluate_opamp(cand)
+    out = {
+        "backend": "ngspice",
+        "model": GENERIC_NGSPICE.name,
+        "available": ngspice_available(),
+        "analytic": {"gain_db": round(a.gain_db, 2), "gbw_mhz": round(a.gbw_hz / 1e6, 2),
+                     "pm_deg": round(a.pm_deg, 2), "power_mw": round(a.power * 1e3, 4)},
+    }
+    try:
+        s = ngspice_evaluate(cand, GENERIC_NGSPICE)
+        out["sim"] = {"gain_db": round(s.gain_db, 2), "gbw_mhz": round(s.gbw_hz / 1e6, 2),
+                      "pm_deg": round(s.pm_deg, 2), "power_mw": round(s.power * 1e3, 4)}
+        out["status"] = "ran_ngspice"
+    except NgspiceUnavailable as e:
+        out["status"] = "ngspice_unavailable"
+        out["error"] = str(e)
+    return out

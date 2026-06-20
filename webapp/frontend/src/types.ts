@@ -111,6 +111,27 @@ export interface MazeData {
   worstWirelength: number;
 }
 
+// --- Interactive floorplan (drag-place -> dynamic routing) ---
+export interface FloorplanPin { net: string; dx: number; dy: number; }
+export interface FloorplanComponent {
+  id: string; label: string;
+  x: number; y: number; w: number; h: number;
+  pins: FloorplanPin[];
+}
+export interface FloorplanData {
+  width: number;
+  height: number;
+  blocked: [number, number][];
+  components: FloorplanComponent[];
+  netNames: string[];
+  order: string[];
+  optimized: boolean;
+  totalWirelength: number;
+  totalBends: number;
+  failed: string[];
+  nets: Record<string, MazeNet>;
+}
+
 // --- T-coil ---
 export interface TcoilCurve {
   magDb: number[];
@@ -204,4 +225,11 @@ export interface ProcessEffects {
     vdd_before: number; vdd_after: number;
   };
   taxonomy: EffectRow[];
+}
+
+// --- ngspice (open-source) eval ---
+export interface SimSpecs { gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number; }
+export interface NgspiceEval {
+  backend: string; model: string; available: boolean;
+  analytic: SimSpecs; sim?: SimSpecs; status: string; error?: string;
 }

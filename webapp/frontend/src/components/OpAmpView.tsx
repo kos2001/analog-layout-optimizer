@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { fetchOpamp, fetchOpampBode, fetchOpampStudy, fetchPreflight, fetchSpectreEval } from "../api";
+import { fetchOpamp, fetchOpampBode, fetchOpampStudy, fetchPreflight, fetchSpectreEval, fetchNgspiceEval } from "../api";
 import { useT } from "../i18n";
-import type { BodeData, OpAmpResult, OpAmpStudy, Preflight, SpectreEval } from "../types";
+import type { BodeData, NgspiceEval, OpAmpResult, OpAmpStudy, Preflight, SpectreEval } from "../types";
 
 function BodePanel({ bode }: { bode: BodeData }) {
   const W = 380, H = 200, padL = 40, padB = 24, padT = 10, padR = 10;
@@ -30,6 +30,8 @@ export default function OpAmpView() {
   const [study, setStudy] = useState<OpAmpStudy | null>(null);
   const [pf, setPf] = useState<Preflight | null>(null);
   const [se, setSe] = useState<SpectreEval | null>(null);
+  const [ng, setNg] = useState<NgspiceEval | null>(null);
+  const [backend, setBackend] = useState<"spectre" | "ngspice">("ngspice");
   const [bode, setBode] = useState<BodeData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -142,21 +144,60 @@ export default function OpAmpView() {
         )}
       </section>
 
-      {/* Spectre backend */}
+      {/* Simulation backend: commercial (Spectre) vs open-source (ngspice) */}
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          {t("opamp.spectre")}
-          {pf && (
+          Closed-loop verify — commercial vs open-source backend
+          {backend === "ngspice" && ng && (
+            <span className={ng.available ? "badge ok" : "badge bad"}>
+              {ng.available ? "ngspice ready" : "ngspice not installed"}
+            </span>
+          )}
+          {backend === "spectre" && pf && (
             <span className={pf.ready ? "badge ok" : "badge bad"}>
               {pf.ready ? "Spectre ready" : "not connected"}
             </span>
           )}
         </div>
-        <button onClick={run("se", async () => setSe(await fetchSpectreEval()))}
+        <div className="seg" style={{ marginBottom: 10 }}>
+          <button className={backend === "ngspice" ? "" : "secondary"} onClick={() => setBackend("ngspice")}>
+            ngspice (open-source)
+          </button>
+          <button className={backend === "spectre" ? "" : "secondary"} onClick={() => setBackend("spectre")}>
+            Spectre (Cadence)
+          </button>
+        </div>
+        <button
+          onClick={backend === "ngspice"
+            ? run("v", async () => setNg(await fetchNgspiceEval()))
+            : run("v", async () => setSe(await fetchSpectreEval()))}
           disabled={busy !== null}>
-          {busy === "se" ? "Verifying…" : t("opamp.verify")}
+          {busy === "v" ? "Verifying…" : t("opamp.verify")}
         </button>
-        {se && (
+
+        {backend === "ngspice" && ng && (
+          <div style={{ marginTop: 12 }}>
+            <table className="tcoil-table">
+              <thead><tr><th></th><th>gain dB</th><th>GBW MHz</th><th>PM deg</th><th>power mW</th></tr></thead>
+              <tbody>
+                <tr><td>analytic model</td><td>{ng.analytic.gain_db}</td><td>{ng.analytic.gbw_mhz}</td>
+                  <td>{ng.analytic.pm_deg}</td><td>{ng.analytic.power_mw}</td></tr>
+                {ng.sim ? (
+                  <tr><td>real ngspice ({ng.model})</td><td>{ng.sim.gain_db}</td><td>{ng.sim.gbw_mhz}</td>
+                    <td>{ng.sim.pm_deg}</td><td>{ng.sim.power_mw}</td></tr>
+                ) : (
+                  <tr><td colSpan={5} style={{ color: "var(--muted)" }}>ngspice — {ng.error}</td></tr>
+                )}
+              </tbody>
+            </table>
+            <p className="note">
+              Real open-source AC sweep (ngspice level-1). GBW & PM track the model;
+              gain differs with model detail — swap to a SKY130 .lib for accuracy.
+            </p>
+          </div>
+        )}
+
+        {backend === "spectre" && se && (
           <div style={{ marginTop: 12 }}>
             <table className="tcoil-table">
               <thead><tr><th></th><th>gain dB</th><th>GBW MHz</th><th>PM deg</th><th>power mW</th></tr></thead>
@@ -167,9 +208,7 @@ export default function OpAmpView() {
                   <tr><td>real Spectre ({se.pdk})</td><td>{se.spectre.gain_db}</td><td>{se.spectre.gbw_mhz}</td>
                     <td>{se.spectre.pm_deg}</td><td>{se.spectre.power_mw}</td></tr>
                 ) : (
-                  <tr><td colSpan={5} style={{ color: "var(--muted)" }}>
-                    Spectre not connected — {se.error}
-                  </td></tr>
+                  <tr><td colSpan={5} style={{ color: "var(--muted)" }}>Spectre not connected — {se.error}</td></tr>
                 )}
               </tbody>
             </table>
@@ -181,9 +220,9 @@ export default function OpAmpView() {
           </div>
         )}
         <p className="note">
-          Same params → specs contract; gain/GBW/PM come from a real Spectre AC sweep
-          (via virtuoso-bridge) when connected, else the analytical surrogate. Connecting
-          a PDK = filling one PDKConfig.
+          Same params → specs contract for both backends. ngspice gives a real,
+          license-free closed loop now; Spectre is the commercial path via
+          virtuoso-bridge. Swapping the backend doesn't change the optimizer.
         </p>
       </section>
     </div>

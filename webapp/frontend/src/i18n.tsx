@@ -47,6 +47,17 @@ const S: Record<string, { en: string; ko: string }> = {
   "maze.total.wl": { en: "total wirelength", ko: "총 배선 길이" },
   "maze.total.bends": { en: "total bends", ko: "총 꺾임" },
   "maze.worst": { en: "worst order (for contrast)", ko: "최악 순서 (대조용)" },
+  "maze.mode.demo": { en: "Order demo", ko: "순서 데모" },
+  "maze.mode.drag": { en: "Drag-place (live)", ko: "드래그 배치 (실시간)" },
+
+  // interactive floorplan
+  "fp.title": { en: "Drag-place floorplan — live re-routing", ko: "드래그 배치 플로어플랜 — 실시간 재배선" },
+  "fp.help": { en: "Drag any device or pad. The maze router re-solves on every move.", ko: "소자/패드를 드래그하세요. 움직일 때마다 maze 라우터가 다시 풉니다." },
+  "fp.unrouted": { en: "unrouted", ko: "미배선" },
+  "fp.optimize": { en: "Optimize net order", ko: "넷 순서 최적화" },
+  "fp.fixed": { en: "Fixed order", ko: "고정 순서" },
+  "fp.order": { en: "net order used", ko: "사용된 넷 순서" },
+  "fp.reset": { en: "Reset placement", ko: "배치 초기화" },
 
   // tcoil
   "tcoil.title": { en: "Bridged T-coil — bandwidth extension (magnitude response)",

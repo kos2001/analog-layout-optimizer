@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchMaze } from "../api";
 import { useT } from "../i18n";
 import type { MazeData, MazeSolution } from "../types";
+import FloorplanView from "./FloorplanView";
 
 const NET_COLORS: Record<string, string> = {
   CLK: "#ffb300",
@@ -64,18 +65,35 @@ export default function MazeView() {
   const { t } = useT();
   const [data, setData] = useState<MazeData | null>(null);
   const [mode, setMode] = useState<"optimized" | "naive">("optimized");
+  const [view, setView] = useState<"demo" | "drag">("drag");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchMaze().then(setData).catch((e) => setError(String(e)));
-  }, []);
+    if (view === "demo" && !data) fetchMaze().then(setData).catch((e) => setError(String(e)));
+  }, [view, data]);
+
+  const ModeTabs = (
+    <div className="seg" style={{ marginBottom: 12, gridColumn: "1 / -1" }}>
+      <button className={view === "drag" ? "" : "secondary"} onClick={() => setView("drag")}>
+        {t("maze.mode.drag")}
+      </button>
+      <button className={view === "demo" ? "" : "secondary"} onClick={() => setView("demo")}>
+        {t("maze.mode.demo")}
+      </button>
+    </div>
+  );
+
+  if (view === "drag") {
+    return <div className="grid">{ModeTabs}<FloorplanView /></div>;
+  }
 
   if (error) return <div className="fatal">Error: {error}</div>;
-  if (!data) return <div className="loading">{t("loading")}</div>;
+  if (!data) return <div className="grid">{ModeTabs}<div className="loading">{t("loading")}</div></div>;
   const sol = data[mode];
 
   return (
     <div className="grid">
+      {ModeTabs}
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
           {t("maze.title")} ({data.netNames.length} nets)
