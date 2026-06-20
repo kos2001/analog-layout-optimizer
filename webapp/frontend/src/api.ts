@@ -164,3 +164,8 @@ import type { PPAData } from "./types";
 export const fetchPPA = (wPower: number, wArea: number, wPerf: number, seed = 0) =>
   fetch(`/api/ppa?w_power=${wPower}&w_area=${wArea}&w_perf=${wPerf}&seed=${seed}`)
     .then((r) => r.json() as Promise<PPAData>);
+
+import type { FlowData } from "./types";
+
+export const fetchFlow = (place: "sa" | "random", seed = 0) =>
+  fetch(`/api/flow?place=${place}&seed=${seed}`).then((r) => r.json() as Promise<FlowData>);

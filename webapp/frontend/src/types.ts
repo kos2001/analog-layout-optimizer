@@ -205,6 +205,30 @@ export interface PPAData {
   constraints: { gain_floor_db: number; pm_min_deg: number };
 }
 
+// --- Schematic -> placement -> routing flow ---
+export interface FlowComponent {
+  id: string; label: string; kind: string;
+  x: number; y: number; w: number; h: number;
+  pins: { net: string; dx: number; dy: number }[];
+}
+export interface FlowRouting {
+  blocked: number[][];
+  netNames: string[];
+  totalWirelength: number;
+  totalVias: number;
+  failed: string[];
+  converged: boolean;
+  iterations: number;
+  nets: Record<string, ScenarioNet>;
+}
+export interface FlowData {
+  width: number; height: number; layers: number; place: string;
+  hpwl: number;
+  netlist: Record<string, string[]>;
+  components: FlowComponent[];
+  routing: FlowRouting;
+}
+
 // --- T-coil ---
 export interface TcoilCurve {
   magDb: number[];
