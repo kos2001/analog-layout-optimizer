@@ -39,6 +39,8 @@ class NgspiceModel:
     l_um: float = 0.18
     vdd: float = VDD
     cl_ff: float = 1000.0
+    subckt: bool = False     # True: PDK devices are X-instance subckts (W/L in um)
+    w_min: float = 0.0       # minimum device width (um), clamp for real PDKs
 
 
 # Generic square-law (level=1) models — mirror the analytical opamp constants
@@ -52,9 +54,43 @@ GENERIC_NGSPICE = NgspiceModel(
     nmos="nmos_g", pmos="pmos_g", l_um=0.18, vdd=VDD,
 )
 
-# For a real open PDK, swap header to e.g.:
-#   .lib "/path/to/sky130A/.../sky130.lib.spice" tt
-# and set nmos="sky130_fd_pr__nfet_01v8", pmos="sky130_fd_pr__pfet_01v8".
+import os
+
+
+def sky130_lib_path(pdk_root: str | None = None) -> str:
+    root = pdk_root or os.environ.get("PDK_ROOT") or os.path.expanduser("~/pdk")
+    return os.path.join(root, "sky130A", "libs.tech", "ngspice", "sky130.lib.spice")
+
+
+def sky130_available(pdk_root: str | None = None) -> bool:
+    return os.path.isfile(sky130_lib_path(pdk_root))
+
+
+def sky130_model(corner: str = "tt", pdk_root: str | None = None,
+                 l_um: float = 0.5, cl_ff: float = 1000.0) -> NgspiceModel:
+    """Real SkyWater SKY130 device models (open PDK) — silicon, not square-law.
+
+    Devices are 1.8 V core FETs (`sky130_fd_pr__{n,p}fet_01v8`) via the PDK's
+    ngspice `.lib`. Requires the PDK installed (e.g. `volare enable`); point
+    PDK_ROOT at it. L defaults to 0.5 um (more intrinsic gain than 0.15 um min).
+    """
+    return NgspiceModel(
+        name=f"sky130-{corner}",
+        header=f'.lib "{sky130_lib_path(pdk_root)}" {corner}',
+        nmos="sky130_fd_pr__nfet_01v8", pmos="sky130_fd_pr__pfet_01v8",
+        l_um=l_um, vdd=1.8, cl_ff=cl_ff, subckt=True, w_min=0.42,
+    )
+
+
+def _dev(model: NgspiceModel, idx: str, d: str, g: str, s: str, b: str,
+         kind: str, w_um: float, l_um: float) -> str:
+    """One device line — primitive `m` (level-1) or PDK `X` subckt."""
+    name = model.nmos if kind == "n" else model.pmos
+    if model.subckt:
+        w = max(round(w_um, 4), model.w_min)
+        return f"x{idx} {d} {g} {s} {b} {name} l={round(l_um, 4)} w={w} nf=1"
+    return f"m{idx} {d} {g} {s} {b} {name} w={round(w_um, 4)}u l={round(l_um, 4)}u"
+
 
 _NETLIST = """\
 * Two-stage Miller OTA — ngspice open-loop AC gain testbench.
@@ -70,12 +106,8 @@ vinp vinp vcm dc 0 ac 1
 Lfb vout vinn 1e9
 Cfb vinn vcm 1e9
 .nodeset v(vout)={vcm} v(vinn)={vcm} v(outp)={vcm}
-m1 outm vinp tail 0 {nmos} w={w1}u l={l}u
-m2 outp vinn tail 0 {nmos} w={w1}u l={l}u
+{devices}
 itail tail 0 dc {itail}
-m3 outm outm vdd vdd {pmos} w={w3}u l={l}u
-m4 outp outm vdd vdd {pmos} w={w3}u l={l}u
-m6 vout outp 0 0 {nmos} w={w6}u l={l}u
 i6 vdd vout dc {i6}
 cc outp vout {cc}p
 cl vout 0 {cl}f
@@ -89,10 +121,16 @@ wrdata {out} vr(vout) vi(vout)
 
 def render_netlist(p: OpAmpParams, model: NgspiceModel, out_path: str) -> str:
     l = model.l_um
+    devices = "\n".join([
+        _dev(model, "1", "outm", "vinp", "tail", "0", "n", p.wl1 * l, l),
+        _dev(model, "2", "outp", "vinn", "tail", "0", "n", p.wl1 * l, l),
+        _dev(model, "3", "outm", "outm", "vdd", "vdd", "p", p.wl3 * l, l),
+        _dev(model, "4", "outp", "outm", "vdd", "vdd", "p", p.wl3 * l, l),
+        _dev(model, "6", "vout", "outp", "0", "0", "n", p.wl6 * l, l),
+    ])
     return _NETLIST.format(
-        header=model.header, nmos=model.nmos, pmos=model.pmos, l=l,
+        header=model.header, devices=devices,
         vdd=model.vdd, vcm=model.vdd / 2.0,
-        w1=round(p.wl1 * l, 4), w3=round(p.wl3 * l, 4), w6=round(p.wl6 * l, 4),
         itail=p.itail, i6=p.i6, cc=p.cc * 1e12, cl=model.cl_ff, out=out_path,
     )
 

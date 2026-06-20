@@ -830,21 +830,30 @@ def post_process_effects(body: EffectsIn) -> dict:
 # Open-source closed loop: verify a candidate with ngspice (vs analytic)
 # --------------------------------------------------------------------------
 @app.get("/api/opamp/ngspice-eval")
-def get_opamp_ngspice_eval(seed: int = 0) -> dict:
+def get_opamp_ngspice_eval(seed: int = 0, model: str = "generic") -> dict:
     from layout_opt.ngspice_backend import (
         GENERIC_NGSPICE, NgspiceUnavailable, ngspice_available, ngspice_evaluate,
+        sky130_model, sky130_available,
     )
+    use_sky = model == "sky130"
+    dev_model = sky130_model() if use_sky else GENERIC_NGSPICE
     cand = de_log_refine(seed=seed).params
     a = evaluate_opamp(cand)
     out = {
         "backend": "ngspice",
-        "model": GENERIC_NGSPICE.name,
+        "model": dev_model.name,
+        "modelKind": "sky130" if use_sky else "generic",
         "available": ngspice_available(),
+        "sky130Available": sky130_available(),
         "analytic": {"gain_db": round(a.gain_db, 2), "gbw_mhz": round(a.gbw_hz / 1e6, 2),
                      "pm_deg": round(a.pm_deg, 2), "power_mw": round(a.power * 1e3, 4)},
     }
+    if use_sky and not sky130_available():
+        out["status"] = "sky130_unavailable"
+        out["error"] = "SKY130 PDK not found. Install with `volare enable` and set PDK_ROOT."
+        return out
     try:
-        s = ngspice_evaluate(cand, GENERIC_NGSPICE)
+        s = ngspice_evaluate(cand, dev_model)
         out["sim"] = {"gain_db": round(s.gain_db, 2), "gbw_mhz": round(s.gbw_hz / 1e6, 2),
                       "pm_deg": round(s.pm_deg, 2), "power_mw": round(s.power * 1e3, 4)}
         out["status"] = "ran_ngspice"

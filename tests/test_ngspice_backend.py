@@ -66,3 +66,30 @@ def test_live_ngspice_runs_and_gives_sane_gain():
     s = ngspice_evaluate(params(), GENERIC_NGSPICE)
     assert s.gain_db > 20.0           # a real amplifier, not a degenerate node
     assert s.gbw_hz > 1e6
+
+
+# --- SKY130 real PDK models ---
+from layout_opt.ngspice_backend import sky130_model, sky130_available
+
+
+def test_sky130_netlist_uses_subckt_instances():
+    nl = render_netlist(params(), sky130_model(), "/tmp/x.txt")
+    assert ".lib" in nl and "sky130_fd_pr__nfet_01v8" in nl
+    assert "x1 outm vinp tail 0 sky130_fd_pr__nfet_01v8" in nl   # X-instance, not m
+    assert "w=" in nl and "l=" in nl
+
+
+def test_sky130_width_clamped_to_min():
+    tiny = OpAmpParams(wl1=0.1, wl3=0.1, wl5=0.1, wl6=0.1, wl7=0.1,
+                       itail=20e-6, i6=80e-6, cc=1e-12)
+    nl = render_netlist(tiny, sky130_model(), "/tmp/x.txt")
+    assert "w=0.42" in nl              # below-min widths clamped to 0.42 um
+
+
+@pytest.mark.skipif(not (ngspice_available() and sky130_available()),
+                    reason="ngspice or SKY130 PDK not installed")
+def test_live_sky130_real_silicon_specs():
+    s = ngspice_evaluate(params(), sky130_model())
+    assert s.gain_db > 30.0            # real BSIM amplifier
+    assert s.gbw_hz > 1e6
+    assert -10.0 < s.pm_deg < 120.0
