@@ -152,7 +152,12 @@ def route_net3(grid: Grid3, pins: list[Cell3], hard_blocked: set[Cell3],
         eff = hard_blocked - tree
         path = astar3(grid, set(tree), {pin}, eff, cell_cost=cell_cost)
         if path is None:
+            # An unroutable net is an OPEN — it has no manufactured geometry, so
+            # drop the partial tree (else its stub fakes a short against others).
             nr.routed = False
+            nr.cells = set()
+            nr.wirelength = 0
+            nr.vias = 0
             return nr
         nr.wirelength += sum(1 for i in range(1, len(path)) if path[i][2] == path[i - 1][2])
         nr.vias += _count_vias(path)
@@ -174,12 +179,27 @@ class MLSolution:
     algo: str = ""
 
 
+def _pin_sets(nets: dict[str, list[Cell3]]):
+    """Per-net pin set + all pin cells (to reserve foreign pins)."""
+    by_net = {net: set(pins) for net, pins in nets.items()}
+    allp: set[Cell3] = set()
+    for s in by_net.values():
+        allp |= s
+    return by_net, allp
+
+
 def route_all3(grid: Grid3, nets: dict[str, list[Cell3]], order: list[str]) -> MLSolution:
-    """Fixed-order sequential routing: a routed net hard-blocks later nets."""
+    """Fixed-order sequential routing: a routed net hard-blocks later nets.
+
+    Every net's pins are reserved from all other nets, so no net can route
+    *through* a foreign pin (which would otherwise create an LVS short).
+    """
     sol = MLSolution(algo="fixed")
+    by_net, allp = _pin_sets(nets)
     occupied: set[Cell3] = set()
     for net in order:
-        nr = route_net3(grid, nets[net], grid.blocked | occupied)
+        foreign = allp - by_net[net]
+        nr = route_net3(grid, nets[net], grid.blocked | occupied | foreign)
         nr.net = net
         sol.routes[net] = nr
         if nr.routed:
@@ -193,10 +213,16 @@ def route_all3(grid: Grid3, nets: dict[str, list[Cell3]], order: list[str]) -> M
 
 def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
                       max_iter: int = 24, pres_fac0: float = 0.5,
-                      pres_growth: float = 1.7, hist_fac: float = 1.0) -> MLSolution:
-    """PathFinder negotiated congestion on the multi-layer surface."""
+                      pres_growth: float = 1.7, hist_fac: float = 1.0,
+                      legalize_rounds: int = 16) -> MLSolution:
+    """PathFinder negotiated congestion on the multi-layer surface.
+
+    Soft cost-based negotiation resolves most contention; a final legalization
+    phase hard-assigns any still-contested cell to one net and forces the others
+    to detour (or fail), so a converged result has zero overlaps — a real short
+    can't slip through as a "warning"."""
     history: dict[Cell3, float] = {}
-    pin_cells = {c for pins in nets.values() for c in pins}
+    by_net, allp = _pin_sets(nets)
     pres_fac = pres_fac0
     routes: dict[str, NetRoute3] = {}
     sol = MLSolution(algo="negotiated")
@@ -205,7 +231,7 @@ def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
         occ: dict[Cell3, int] = {}
         routes = {}
         for net, pins in nets.items():
-            mine = set(pins)
+            mine = by_net[net]
 
             def cost(cell, _mine=mine):
                 if cell in _mine:
@@ -213,13 +239,16 @@ def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
                 pres = pres_fac * occ.get(cell, 0)
                 return history.get(cell, 0.0) + pres
 
+            # Soft loop prices contention (incl. crossing a foreign pin); any
+            # residual overlap is caught below and legalized/sequentialized.
             nr = route_net3(grid, pins, grid.blocked, cost)
             nr.net = net
             routes[net] = nr
             if nr.routed:
                 for c in nr.cells:
                     occ[c] = occ.get(c, 0) + 1
-        overused = [c for c, n in occ.items() if n > 1 and c not in pin_cells]
+        # Foreign pins are reserved, so any shared cell now is a real wire short.
+        overused = [c for c, n in occ.items() if n > 1]
         for c in overused:
             history[c] = history.get(c, 0.0) + hist_fac
         pres_fac *= pres_growth
@@ -227,6 +256,49 @@ def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
         if not overused and all(r.routed for r in routes.values()):
             sol.converged = True
             break
+
+    # Legalization: deterministically give each contested cell to one net and
+    # hard-block it for the rest, rerouting them, until no overlap remains.
+    if not sol.converged:
+        forbidden: dict[str, set[Cell3]] = {n: set() for n in nets}
+        for _ in range(legalize_rounds):
+            occ_l: dict[Cell3, set] = {}
+            for n, r in routes.items():
+                if r.routed:
+                    for c in r.cells:
+                        occ_l.setdefault(c, set()).add(n)
+            overused_l = {c: ns for c, ns in occ_l.items() if len(ns) > 1}
+            if not overused_l and all(r.routed for r in routes.values()):
+                sol.converged = True
+                break
+            for c, ns in overused_l.items():
+                winner = min(ns)                 # deterministic owner
+                for n in ns:
+                    if n != winner:
+                        forbidden[n].add(c)
+            for net, pins in nets.items():
+                foreign = allp - by_net[net]
+                nr = route_net3(grid, pins, grid.blocked | foreign | forbidden[net])
+                nr.net = net
+                routes[net] = nr
+        sol.iterations += 1
+
+    # Hard guarantee: never emit a short. If any overlap survives legalization,
+    # fall back to a sequential pass (each net hard-blocks prior ones -> zero
+    # overlap by construction); an unroutable net becomes an honest open, never
+    # a hidden short that masquerades as a clean sign-off.
+    occ_chk: dict[Cell3, int] = {}
+    for r in routes.values():
+        if r.routed:
+            for c in r.cells:
+                occ_chk[c] = occ_chk.get(c, 0) + 1
+    if any(n > 1 for n in occ_chk.values()):
+        def _span(net):
+            xs = [p[0] for p in nets[net]]; ys = [p[1] for p in nets[net]]
+            return (max(xs) - min(xs)) + (max(ys) - min(ys))
+        seq = route_all3(grid, nets, sorted(nets, key=_span))
+        routes = seq.routes
+        sol.converged = not seq.failed
 
     sol.routes = routes
     sol.failed = [n for n, r in routes.items() if not r.routed]
@@ -237,6 +309,5 @@ def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
         if r.routed:
             for c in r.cells:
                 occ_final[c] = occ_final.get(c, 0) + 1
-    sol.overused = sorted(c for c, n in occ_final.items()
-                          if n > 1 and c not in pin_cells)
+    sol.overused = sorted(c for c, n in occ_final.items() if n > 1)
     return sol

@@ -20,15 +20,16 @@ from . import drc as _drc
 from . import signoff as _signoff
 from . import parasitics as _par
 
-W, H = 40, 28                      # placement / routing grid (cells)
+W, H = 52, 36                      # placement / routing grid (cells)
 
-# Fixed I/O + supply pads on the perimeter (top-level pins are placed at edges).
+# Fixed I/O + supply pads on the perimeter (top-level pins are placed at edges),
+# spread out so each net has room to escape its device pin to its pad.
 PORT_POS: dict[str, tuple[int, int]] = {
-    "VINP": (0, 6), "VINN": (0, 20), "VOUT": (39, 13),
-    "VBIAS": (6, 27), "VBIASP": (33, 0), "VDD": (19, 0), "VSS": (19, 27),
+    "VINP": (0, 10), "VINN": (0, 26), "VOUT": (W - 1, 18),
+    "VBIAS": (8, H - 1), "VBIASP": (W - 9, 0), "VDD": (W // 2, 0), "VSS": (W // 2, H - 1),
 }
 # Inner region the core devices are placed within (leave a routing margin).
-_RX, _RY, _RW, _RH = 4, 3, 32, 22
+_RX, _RY, _RW, _RH = 6, 5, 40, 26
 
 
 def _abs_pins(sch: Schematic, pos: dict[str, tuple[int, int]]) -> dict[str, list[tuple[int, int]]]:

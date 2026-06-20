@@ -83,3 +83,16 @@ def test_signoff_lvs_matches_schematic_device_count():
     f = run_flow("sa", seed=2)
     assert f["signoff"]["lvs"]["nDevicesChecked"] == 15      # M1-M7, Cc, 7 ports
     assert f["signoff"]["lvs"]["nSchematicNets"] == 10
+
+
+def test_router_never_emits_a_short():
+    """The router must never overlap nets — an unroutable net is an honest open,
+    never a hidden short masquerading as a clean sign-off."""
+    for seed in range(10):
+        f = run_flow("sa", seed=seed)
+        so = f["signoff"]
+        assert so["drc"]["counts"]["short"] == 0, f"seed {seed} DRC short"
+        assert so["lvs"]["shorts"] == [], f"seed {seed} LVS short"
+        # PASS verdict must imply genuinely clean (no open either)
+        if so["verdict"] == "PASS":
+            assert not f["routing"]["failed"] and so["lvs"]["clean"]
