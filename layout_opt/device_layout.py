@@ -17,8 +17,8 @@ import klayout.db as db
 
 LAYERS = {
     "nwell": (64, 20), "diff": (65, 20), "poly": (66, 20), "licon": (66, 44),
-    "li1": (67, 20), "mcon": (67, 44), "met1": (68, 20),
-    "nsdm": (93, 44), "psdm": (94, 20),
+    "li1": (67, 20), "mcon": (67, 44), "met1": (68, 20), "via": (68, 44),
+    "met2": (69, 20), "nsdm": (93, 44), "psdm": (94, 20),
 }
 
 # Geometry constants (microns) — simplified but DRC-plausible.
@@ -66,15 +66,17 @@ def add_device(cell: db.Cell, li: dict, x: float, y: float, w: float, l: float,
         terms[name] = (mx0, ay0, mx1, ay1)
 
     # Gate contact: poly tab above active -> licon -> li1 -> mcon -> met1.
+    # Keep the gate met1 narrow so a neighbouring S/D drop can't graze it.
     ty0, ty1 = ay1 + POLY_EXT, ay1 + POLY_EXT + GATE_TAB
     box("poly", gx0 - 0.04, ay1 + POLY_EXT - 0.01, gx1 + 0.04, ty1)
     gcx = (gx0 + gx1) / 2
     gcy = (ty0 + ty1) / 2
+    gm0, gm1 = gcx - (CON + 0.015), gcx + (CON + 0.015)     # tight gate metal
     box("licon", gcx - CON, gcy - CON, gcx + CON, gcy + CON)
-    box("li1", gx0 - 0.06, ty0, gx1 + 0.06, ty1)
+    box("li1", gm0, ty0, gm1, ty1)
     box("mcon", gcx - CON, gcy - CON, gcx + CON, gcy + CON)
-    box("met1", gx0 - 0.1, ty0, gx1 + 0.1, ty1)
-    terms["G"] = (gx0 - 0.1, ty0, gx1 + 0.1, ty1)
+    box("met1", gm0, ty0, gm1, ty1)
+    terms["G"] = (gm0, ty0, gm1, ty1)
 
     terms["kind"] = kind
     terms["W"] = w
