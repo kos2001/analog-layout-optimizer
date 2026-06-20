@@ -18,7 +18,20 @@ const S: Record<string, { en: string; ko: string }> = {
   "tab.agent": { en: "Agent", ko: "Agent" },
   "tab.complex": { en: "Complex cases", ko: "복잡 사례" },
   "tab.ppa": { en: "PPA", ko: "PPA" },
+  "tab.flow": { en: "Schematic → P&R", ko: "Schematic → P&R" },
   "loading": { en: "Loading…", ko: "불러오는 중…" },
+
+  // schematic -> placement -> routing flow
+  "flow.title": { en: "Schematic → placement → routing (one netlist)", ko: "Schematic → 배치 → 배선 (하나의 netlist)" },
+  "flow.sa": { en: "SA placement", ko: "SA 배치" },
+  "flow.random": { en: "Random placement", ko: "랜덤 배치" },
+  "flow.rerun": { en: "Re-place (new seed)", ko: "재배치 (새 seed)" },
+  "flow.running": { en: "Placing + routing…", ko: "배치+배선 중…" },
+  "flow.hpwl": { en: "HPWL (placement cost)", ko: "HPWL (배치 비용)" },
+  "flow.netlist": { en: "Netlist (net → terminals) — hover to highlight", ko: "Netlist (넷 → 단자) — 마우스 올리면 강조" },
+  "flow.note": {
+    en: "The OTA netlist is the single source of truth: each terminal becomes a pin on its net, and same-net pins become one router net — placement pins and routing nets can't drift apart. SA placement minimizes HPWL, and a tighter HPWL yields a shorter route (compare SA vs random). Hover a net to see it across the netlist, the device pins, and the wires.",
+    ko: "OTA netlist이 단일 진실원천입니다: 각 단자가 그 넷의 핀이 되고, 같은 넷 핀들이 하나의 라우터 넷이 됩니다 — 배치 핀과 배선 넷이 어긋날 수 없습니다. SA 배치는 HPWL을 최소화하고, HPWL이 작을수록 배선이 짧아집니다(SA vs 랜덤 비교). 넷에 마우스를 올리면 netlist·소자 핀·배선에서 동시에 강조됩니다." },
 
   // PPA
   "ppa.title": { en: "PPA optimization — power / performance / area Pareto front", ko: "PPA 최적화 — 전력/성능/면적 Pareto front" },

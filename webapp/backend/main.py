@@ -40,6 +40,7 @@ from layout_opt.interactive import (
 from layout_opt import scenarios as _scn
 from layout_opt import common_centroid as _cc
 from layout_opt import ppa as _ppa
+from layout_opt import placement as _flow
 from layout_opt.tcoil import (
     TCoilParams,
     bandwidth,
@@ -404,6 +405,13 @@ def get_ppa(w_power: float = 1.0, w_area: float = 1.0, w_perf: float = 1.0,
     pop = max(20, min(pop, 160)); gens = max(5, min(gens, 80))
     return _ppa.run_ppa(pop_size=pop, generations=gens, seed=seed,
                         weights=(w_power, w_area, w_perf))
+
+
+@app.get("/api/flow")
+def get_flow(place: str = "sa", seed: int = 0) -> dict:
+    """Schematic -> placement -> routing, connected by one netlist."""
+    place = place if place in ("sa", "random") else "sa"
+    return _flow.run_flow(place=place, seed=seed)
 
 
 # --------------------------------------------------------------------------
