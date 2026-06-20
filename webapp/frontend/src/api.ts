@@ -133,6 +133,11 @@ import type { NgspiceEval } from "./types";
 export const fetchNgspiceEval = (model: "generic" | "sky130" = "generic") =>
   fetch(`/api/opamp/ngspice-eval?model=${model}`).then((r) => r.json() as Promise<NgspiceEval>);
 
+import type { PVTData } from "./types";
+
+export const fetchPVT = (full = false) =>
+  fetch(`/api/pvt?full=${full}`).then((r) => r.json() as Promise<PVTData>);
+
 import type { FloorplanComponent, FloorplanData } from "./types";
 
 export const fetchFloorplanScenario = () =>
