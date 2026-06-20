@@ -3,6 +3,7 @@ numpy
 scipy
 scikit-learn
 pytest
+gdstk          # GDSII export (gds.py); pure pip, no PDK needed
 # The repo under ../virtuoso-bridge-lite provides the SKILL string builders:
 #   uv pip install -e ../virtuoso-bridge-lite
 # Only its pure ops functions are used here (no SSH / no Virtuoso connection).

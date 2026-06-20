@@ -111,6 +111,18 @@ R/C and re-simulates: parasitic C on the output and on the high-impedance intern
 node degrade phase margin. A tighter (SA) placement degrades far less than a
 random one — the concrete link from **placement quality → silicon performance**.
 
+### GDS export (`gds.py`)
+
+The placed+routed flow exports to real **GDSII** (`gdstk`, no PDK needed) on
+SKY130 stream layers (met1 68/20, met2 69/20, via 68/44, device 65/20, labels) —
+each routing-grid cell becomes metal, vias where a net changes layer, a marker +
+label per device. The file opens in **KLayout / Magic** and can be DRC'd against
+the SKY130 deck — the bridge from the in-house grid sign-off to real-tool
+verification. Schematic→P&R tab → **Export GDS**, or `alo.py gds`.
+
+Next fidelity step (researched, not yet wired): swap the grid DRC/LVS for
+**KLayout/Magic DRC** and **Netgen LVS** on this GDS against the SKY130 deck.
+
 ### Real SKY130 silicon (`ngspice_backend.py`)
 
 The OTA Verify can run on real **SkyWater SKY130** BSIM devices
