@@ -37,6 +37,15 @@ const S: Record<string, { en: string; ko: string }> = {
   "flow.signoff.pass": { en: "PASS (tape-out clean)", ko: "PASS (테이프아웃 가능)" },
   "flow.signoff.fail": { en: "FAIL", ko: "FAIL" },
   "flow.warnings": { en: "DRC warnings", ko: "DRC 경고" },
+  "flow.post.title": { en: "Post-layout (parasitic-extracted)", ko: "포스트레이아웃 (기생성분 추출)" },
+  "flow.post.stable": { en: "stable", ko: "안정" },
+  "flow.post.unstable": { en: "unstable (PM < 45°)", ko: "불안정 (PM < 45°)" },
+  "flow.post.schem": { en: "schematic", ko: "스키매틱" },
+  "flow.post.post": { en: "post-layout", ko: "포스트레이아웃" },
+  "flow.post.critical": { en: "critical-net parasitics", ko: "핵심 넷 기생성분" },
+  "flow.post.note": {
+    en: "R/C extracted from the routed wires and fed back into the OTA. Gain & GBW hold (set by Cc), but parasitic C on the output (→ load) and on the high-impedance node n2 (→ pole 1/(r1·C)) eat phase margin. A long route (random placement) can push PM below 45° — the schematic-clean design fails post-layout. This is why placement & routing feed back into performance.",
+    ko: "라우팅된 와이어에서 R/C를 추출해 OTA에 되먹입니다. gain·GBW는 유지(Cc가 결정)되지만, 출력 노드(→부하)와 고임피던스 노드 n2(→극점 1/(r1·C))의 기생 C가 위상여유를 갉아먹습니다. 배선이 길면(랜덤 배치) PM이 45° 아래로 떨어져 — 스키매틱에선 멀쩡하던 설계가 포스트레이아웃에서 실패. 배치·배선이 성능으로 되먹여지는 이유입니다." },
 
   // PPA
   "ppa.title": { en: "PPA optimization — power / performance / area Pareto front", ko: "PPA 최적화 — 전력/성능/면적 Pareto front" },
