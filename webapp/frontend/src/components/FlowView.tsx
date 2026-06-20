@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchFlow } from "../api";
 import { useT } from "../i18n";
 import type { FlowData } from "../types";
-import { fetchGds, fetchKlayoutDrc } from "../api";
+import { fetchGds, fetchKlayoutDrc, fetchLvs } from "../api";
 import RouteGrid, { netColorFactory } from "./RouteGrid";
 
 function SignoffPanel({ data }: { data: FlowData }) {
@@ -98,6 +98,7 @@ export default function FlowView() {
   const [showDrc, setShowDrc] = useState(true);
   const [gdsNote, setGdsNote] = useState<string | null>(null);
   const [kdrc, setKdrc] = useState<string | null>(null);
+  const [lvs, setLvs] = useState<string | null>(null);
 
   useEffect(() => {
     setBusy(true); setErr(null);
@@ -128,6 +129,15 @@ export default function FlowView() {
     } catch (e) { setKdrc(String(e)); }
   };
 
+  const runLvs = async () => {
+    setLvs("running KLayout LVS…");
+    try {
+      const r = await fetchLvs();
+      const dev = Object.entries(r.devices.counts).map(([k, v]) => `${v} ${k}`).join(", ");
+      setLvs(`${r.cell} (transistor-level): ${dev} — ${r.tool}: LVS ${r.match ? "MATCH ✓" : "MISMATCH ✗"} vs schematic`);
+    } catch (e) { setLvs(String(e)); }
+  };
+
   if (err) return <div className="fatal">Error: {err}</div>;
 
   const names = data ? Object.keys(data.netlist) : [];
@@ -149,9 +159,11 @@ export default function FlowView() {
           <button className={showDrc ? "" : "secondary"} onClick={() => setShowDrc((s) => !s)}>{t("flow.drc.toggle")}</button>
           <button className="secondary" onClick={exportGds} disabled={busy}>{t("flow.gds")}</button>
           <button className="secondary" onClick={realDrc} disabled={busy}>{t("flow.kdrc")}</button>
+          <button className="secondary" onClick={runLvs} disabled={busy}>{t("flow.lvs")}</button>
         </div>
         {gdsNote && <p className="note" style={{ marginTop: 0 }}>{gdsNote}</p>}
         {kdrc && <p className="note" style={{ marginTop: 0 }}>{kdrc}</p>}
+        {lvs && <p className="note" style={{ marginTop: 0 }}>{lvs}</p>}
 
         {data && <SignoffPanel data={data} />}
         {data && <PostLayoutPanel data={data} />}

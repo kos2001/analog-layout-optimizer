@@ -435,6 +435,13 @@ def get_flow_gds(place: str = "sa", seed: int = 0) -> dict:
             "bytes": len(data), "stats": stats}
 
 
+@app.get("/api/lvs")
+def get_lvs() -> dict:
+    """Transistor-level layout synthesis + real KLayout LVS (current mirror)."""
+    from layout_opt.klayout_lvs import lvs_current_mirror
+    return lvs_current_mirror()
+
+
 @app.get("/api/flow/drc-klayout")
 def get_flow_drc_klayout(place: str = "sa", seed: int = 0) -> dict:
     """Real DRC on the exported GDS with the KLayout engine (met1/met2 width+space)."""

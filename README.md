@@ -128,11 +128,23 @@ The exported GDS is checked by **KLayout's actual geometric DRC engine** (pip
 corner/notch regions, now at true geometry. Schematic→P&R tab → **Real DRC
 (KLayout)**, `alo.py klayout-drc`, or `/api/flow/drc-klayout`.
 
-Honest scope: this is **metal-layer geometric DRC**. Full device-level DRC
-(poly/diff/well/contact) and **Netgen LVS** need a transistor-level layout
-(real devices, contacts, wells) — the abstract grid router doesn't emit one, so
-those are a separate layout-synthesis effort, not a check on this GDS. The
-in-house connectivity LVS (`signoff.py`) is the right fidelity for this stage.
+### Transistor-level layout + real LVS (`device_layout.py`, `klayout_lvs.py`)
+
+Beyond the grid: `device_layout.py` synthesizes **real SKY130 transistor
+geometry** (active / poly / licon / li1 / mcon / met1, nwell for PMOS, implants)
+— a merged-diffusion current mirror with proper contacts and a poly-tied gate.
+`klayout_lvs.py` runs **real LVS with KLayout's engine**: `DeviceExtractorMOS3`
+recovers the MOSFETs (type, W, L, connectivity) and `NetlistComparer` matches
+the extracted layout netlist against the schematic — a true layout-vs-schematic
+check, and it correctly **fails** on a wrong netlist or wrong device width.
+Schematic→P&R tab → **Transistor LVS (KLayout)**, `alo.py lvs`, or `/api/lvs`.
+
+Magic + Netgen aren't installable on this host (no conda/brew formula; building
+from source is out of scope), so KLayout's LVS engine — the same one the SKY130
+KLayout LVS deck uses, and pip-installable — is the equivalent real-tool path.
+Scaling the full routed OTA to transistor-level (all devices + real-metal
+routing to terminals) is the same technique applied at size; the current mirror
+proves the loop end to end (synthesis → extraction → LVS PASS).
 
 ### Real SKY130 silicon (`ngspice_backend.py`)
 

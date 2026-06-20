@@ -23,6 +23,7 @@ Usage:
   python alo.py pvt          [--full]        # SKY130 PVT corner analysis (worst-case)
   python alo.py gds          [--out F.gds]   # export placed+routed OTA to GDSII
   python alo.py klayout-drc                  # REAL KLayout DRC on the exported GDS
+  python alo.py lvs                          # transistor-level layout + real KLayout LVS
 """
 
 from __future__ import annotations
@@ -379,6 +380,12 @@ def _klayout_drc(args):
     return {"op": "klayout_drc", **run_drc_on_flow(f)}
 
 
+def _lvs(args):
+    """Transistor-level layout synthesis + REAL KLayout LVS (current mirror)."""
+    from layout_opt.klayout_lvs import lvs_current_mirror
+    return {"op": "lvs", **lvs_current_mirror()}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Analog Layout Optimizer JSON CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -435,6 +442,8 @@ def main() -> int:
     p = sub.add_parser("klayout-drc", help="real KLayout DRC (met1/met2) on the exported GDS")
     p.add_argument("--place", choices=["sa", "random"], default="sa")
     p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_klayout_drc)
+    p = sub.add_parser("lvs", help="transistor-level layout + real KLayout LVS (current mirror)")
+    p.set_defaults(fn=_lvs)
     args = ap.parse_args()
     print(json.dumps(args.fn(args), indent=2))
     return 0

@@ -190,3 +190,7 @@ import type { KlayoutDrc } from "./types";
 
 export const fetchKlayoutDrc = (place: "sa" | "random", seed = 0) =>
   fetch(`/api/flow/drc-klayout?place=${place}&seed=${seed}`).then((r) => r.json() as Promise<KlayoutDrc>);
+
+import type { LvsResult } from "./types";
+
+export const fetchLvs = () => fetch("/api/lvs").then((r) => r.json() as Promise<LvsResult>);
