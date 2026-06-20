@@ -414,6 +414,14 @@ def get_flow(place: str = "sa", seed: int = 0) -> dict:
     return _flow.run_flow(place=place, seed=seed)
 
 
+@app.get("/api/full-flow")
+def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False) -> dict:
+    """One-click end-to-end: sizing -> P&R -> sign-off -> post-layout -> [silicon]."""
+    from layout_opt.flow_e2e import run_end_to_end
+    place = place if place in ("sa", "random") else "sa"
+    return run_end_to_end(place=place, seed=seed, sky130=sky130)
+
+
 # --------------------------------------------------------------------------
 # T-coil frequency response
 # --------------------------------------------------------------------------

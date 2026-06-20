@@ -1,10 +1,22 @@
 # Analog Layout Optimization PoC — *without* Virtuoso
 
-A working, fully-tested proof of concept for **layout geometric-parameter
-optimization** that runs and verifies entirely **offline** — no running Cadence
-Virtuoso, no PDK, no license needed. It demonstrates exactly which layers of an
-analog layout-optimization flow can be built and validated before any EDA tool
-is in the loop, using `virtuoso-bridge-lite`'s pure SKILL builders.
+A working, fully-tested proof of concept for an **analog design + layout flow**
+that runs and verifies entirely **offline** — no running Cadence Virtuoso, no
+license needed. It now spans the whole loop, schematic to silicon:
+
+> **sizing (DE)** → **schematic netlist** → **placement (SA)** → **routing
+> (negotiated, multi-layer)** → **sign-off (DRC + LVS + connectivity)** →
+> **parasitic extraction → post-layout re-sim** → **optional SKY130 silicon
+> verify (real PDK)**
+
+It demonstrates which layers of an analog flow can be built and validated before
+any commercial EDA tool is in the loop, using `virtuoso-bridge-lite`'s pure SKILL
+builders, plus open-source **ngspice** and the open **SKY130** PDK for real
+device physics. **140+ tests**, all green offline (SKY130/Spectre paths degrade
+gracefully when the PDK/server is absent).
+
+See **[End-to-end flow & web app](#end-to-end-flow--web-app)** for the one-click
+pipeline and the interactive UI.
 
 ## Recommended architecture
 
@@ -40,6 +52,73 @@ fully supported. If a live Cadence environment exists later, delegate SKILL
 transport, daemon/tunnel lifecycle, Spectre invocation, PSF parsing, and
 Virtuoso/Maestro diagnostics to `virtuoso-bridge-lite`; do not grow a second
 bridge here. See `docs/arcadia-integration.md` for the operating checklist.
+
+## End-to-end flow & web app
+
+A FastAPI backend (`webapp/backend`) + React/Vite frontend (`webapp/frontend`)
+expose every stage. The **Full flow** tab runs the whole pipeline on one click
+(`/api/full-flow` → `layout_opt/flow_e2e.py`) and shows a stage-by-stage verdict;
+the other tabs let you explore each stage interactively.
+
+```
+┌ sizing (DE, log-space) ── opamp_opt.py        minimize power s.t. gain/GBW/PM/slew
+│ schematic (netlist) ───── schematic.py        OTA devices+terminals = single source of truth
+│ placement (SA) ────────── placement.py        minimize HPWL (+ overlap)
+│ routing (negotiated) ──── mlroute.py           2-layer PathFinder rip-up-and-reroute
+│ sign-off ──────────────── drc.py + signoff.py  DRC + LVS (extract vs netlist) + connectivity
+│ post-layout ───────────── parasitics.py        extract R/C → re-sim → ΔPM
+└ silicon verify (opt.) ─── ngspice_backend.py   real SKY130 BSIM via ngspice
+```
+
+| Web tab | What it shows |
+|---|---|
+| **Full flow** | one-click sizing→silicon pipeline + verdict |
+| Layout / Joint | device + interconnect geometry optimization |
+| Comparator (maze) | A* maze routing + **drag-to-place** live re-routing |
+| Complex cases | bus/macro+power-grid/diff-pair; **fixed vs best-order vs PathFinder** + DRC |
+| Schematic → P&R | netlist → placement → routing, **sign-off panel + DRC overlay + post-layout** |
+| PPA | **NSGA-II** power/performance/area **Pareto front** + preference weighting |
+| Op-amp (OTA) | sizing + AC Bode + Verify (**generic level-1 / SKY130 real PDK** / Spectre) |
+| T-coil, Process, Surrogate, Bridge, Agent | bandwidth peaking, foundry-change effects, surrogate loop, bridge smoke, Hermes agent |
+
+### Run the web app
+
+```bash
+# backend (set PDK_ROOT to enable the SKY130 path; optional)
+PDK_ROOT=~/pdk python -m uvicorn webapp.backend.main:app --port 8011
+# frontend (Vite dev server proxies /api → :8011)
+cd webapp/frontend && npm install && npm run dev      # http://localhost:5173
+```
+
+`/api/full-flow?place=sa&seed=1&sky130=false` returns the staged report headless.
+
+### Routing algorithms — is A\* enough?
+
+`scenarios.py` + `mlroute.py` answer this with running comparisons. A\* is optimal
+*per net*, but routing nets sequentially makes the result depend on net order
+(NP-hard). On congested cases **fixed-order A\*** strands nets or burns vias;
+**PathFinder negotiated congestion** (rip-up-and-reroute, order-independent) on a
+**2-layer** surface routes them all. E.g. the macro+power-grid case: fixed-order
+leaves a net unrouted; negotiation routes all 8 cleanly.
+
+### Sign-off (DRC + LVS) and post-layout
+
+`drc.py` checks the routed geometry (short/corner/via-spacing/open); `signoff.py`
+runs **LVS** — it extracts per-net connectivity from the routed metal and verifies
+it matches the schematic netlist (terminals on one component = no open; no shared
+cell = no short) — then gives a PASS/FAIL verdict. `parasitics.py` then extracts
+R/C and re-simulates: parasitic C on the output and on the high-impedance internal
+node degrade phase margin. A tighter (SA) placement degrades far less than a
+random one — the concrete link from **placement quality → silicon performance**.
+
+### Real SKY130 silicon (`ngspice_backend.py`)
+
+The OTA Verify can run on real **SkyWater SKY130** BSIM devices
+(`sky130_fd_pr__{n,p}fet_01v8`) through the open PDK's ngspice `.lib`, instead of
+the analytic square-law model. Same sizing, different (silicon-grade) numbers —
+the model-fidelity gap that motivates post-layout sim. Install the PDK with
+`volare enable` and point `PDK_ROOT` at it; without it the path degrades to a
+clear "PDK missing" and the live tests skip.
 
 ## The cell
 
@@ -92,8 +171,11 @@ it in is a one-function change — see the bottom of `run_demo.py`.
 # from repo root, with Arcadia virtuoso-bridge-lite cloned adjacent to this repo
 uv pip install -e ../virtuoso-bridge-lite numpy scipy scikit-learn pytest
 
-python -m pytest -q          # 19 tests, all offline
-python run_demo.py           # end-to-end: optimize → report → emit SKILL
+python -m pytest -q          # 150+ tests, all offline (SKY130 live tests skip if no PDK)
+python run_demo.py           # device demo: optimize → report → emit SKILL
+# full schematic→silicon pipeline, headless:
+python -c "from layout_opt.flow_e2e import run_end_to_end as r; \
+import json; print(json.dumps(r('sa',1)['stages'], indent=1))"
 ```
 
 Arcadia engine smoke checks (safe without an EDA server):
