@@ -142,9 +142,14 @@ Schematic→P&R tab → **Transistor LVS (KLayout)**, `alo.py lvs`, or `/api/lvs
 Magic + Netgen aren't installable on this host (no conda/brew formula; building
 from source is out of scope), so KLayout's LVS engine — the same one the SKY130
 KLayout LVS deck uses, and pip-installable — is the equivalent real-tool path.
-Scaling the full routed OTA to transistor-level (all devices + real-metal
-routing to terminals) is the same technique applied at size; the current mirror
-proves the loop end to end (synthesis → extraction → LVS PASS).
+
+**Full OTA, transistor level** (`ota_layout.py`): all seven MOSFETs are placed
+in a row and routed in real metal (met1 vertical drops + met2 per-net buses +
+vias), then extracted and LVS-compared to the OTA schematic — **LVS clean**
+(4 nmos + 3 pmos, every net matched). `alo.py lvs --cell ota`, `/api/lvs?cell=ota`,
+or the **Transistor LVS (KLayout)** button. The transistor-level GDS exports too.
+(Cc is omitted from the MOS LVS — it's a capacitor device; the seven transistors
+define every net on their own.)
 
 ### Real SKY130 silicon (`ngspice_backend.py`)
 

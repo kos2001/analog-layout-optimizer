@@ -6,7 +6,7 @@ import pytest
 from layout_opt.device_layout import add_device, layer_index, build_current_mirror
 from layout_opt.klayout_lvs import (
     extract_netlist, device_summary, schematic_mos_netlist, compare,
-    lvs_current_mirror,
+    lvs_current_mirror, lvs_ota,
 )
 
 
@@ -36,6 +36,21 @@ def test_lvs_fails_on_wrong_schematic():
          {"name": "M2", "kind": "nmos", "S": "VSS", "G": "OUT", "D": "OUT", "W": 1.0, "L": 0.15}],
         ports=["VSS", "GATE", "OUT"], name="CMIRROR")
     assert compare(nl, wrong) is False
+
+
+def test_full_ota_lvs_matches_schematic():
+    r = lvs_ota()
+    assert r["match"] is True                      # full OTA transistor P&R is LVS-clean
+    assert r["devices"]["counts"] == {"nmos": 4, "pmos": 3}
+
+
+def test_full_ota_gds_export(tmp_path):
+    import gdstk
+    out = str(tmp_path / "ota_tr.gds")
+    r = lvs_ota(gds_out=out)
+    assert r["match"] is True
+    lib = gdstk.read_gds(out)                       # real, re-readable GDS
+    assert lib.top_level()[0].name == "OTA"
 
 
 def test_lvs_detects_wrong_width():
