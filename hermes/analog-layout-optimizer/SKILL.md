@@ -66,6 +66,9 @@ $PY $ALO ngspice-eval [--model sky130]  # verify OTA on REAL ngspice; --model sk
                                # real SkyWater SKY130 BSIM silicon (needs PDK_ROOT)
 $PY $ALO pvt [--full]          # SKY130 PVT corner analysis: worst-case gain/GBW/PM
                                # across process/voltage/temp (slow, ~15 s/corner)
+$PY $ALO gds [--out F.gds]     # export placed+routed OTA to real GDSII (SKY130 layers)
+$PY $ALO klayout-drc           # REAL KLayout DRC (met1/met2 width+space) on the GDS
+$PY $ALO lvs                   # transistor-level layout synth + REAL KLayout LVS
 $PY $ALO bridge-smoke          # offline-safe: check Arcadia engine import/CLI; no EDA server required
 $PY $ALO preflight             # optional future: check real-Spectre readiness (will be unready without EDA server)
 $PY $ALO bridge-smoke --live   # optional future: execute SKILL 1+2 only after bridge is configured

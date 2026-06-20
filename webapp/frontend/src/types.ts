@@ -288,6 +288,12 @@ export interface KlayoutDrc {
   clean?: boolean; total?: number; layers?: KlayoutDrcLayer[];
 }
 
+export interface LvsResult {
+  tool: string; cell: string; match: boolean;
+  devices: { counts: Record<string, number> };
+  layout_netlist: string;
+}
+
 export interface FlowStage { name: string; status: string; detail: string; }
 export interface FlowSizing {
   feasible: boolean; gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number;

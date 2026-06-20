@@ -48,6 +48,7 @@ const S: Record<string, { en: string; ko: string }> = {
   "flow.drc.toggle": { en: "DRC markers", ko: "DRC 표시" },
   "flow.gds": { en: "Export GDS", ko: "GDS 내보내기" },
   "flow.kdrc": { en: "Real DRC (KLayout)", ko: "실제 DRC (KLayout)" },
+  "flow.lvs": { en: "Transistor LVS (KLayout)", ko: "트랜지스터 LVS (KLayout)" },
   "flow.signoff": { en: "Sign-off", ko: "Sign-off (검증)" },
   "flow.signoff.pass": { en: "PASS (tape-out clean)", ko: "PASS (테이프아웃 가능)" },
   "flow.signoff.fail": { en: "FAIL", ko: "FAIL" },
