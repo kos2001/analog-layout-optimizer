@@ -41,6 +41,7 @@ class NgspiceModel:
     cl_ff: float = 1000.0
     subckt: bool = False     # True: PDK devices are X-instance subckts (W/L in um)
     w_min: float = 0.0       # minimum device width (um), clamp for real PDKs
+    temp: float = 27.0       # circuit temperature (deg C) for the sim
 
 
 # Generic square-law (level=1) models — mirror the analytical opamp constants
@@ -97,7 +98,7 @@ _NETLIST = """\
 * DC feedback (huge L sets vout DC = vinn) biases the output to vcm; at AC the
 * huge C grounds vinn to vcm (open loop), so vout/vinp = open-loop gain.
 {header}
-.options gmin=1e-10 reltol=1e-3 abstol=1e-9 vntol=1e-6 itl1=500
+.options gmin=1e-10 reltol=1e-3 abstol=1e-9 vntol=1e-6 itl1=500 temp={temp}
 vdd vdd 0 {vdd}
 vcm vcm 0 {vcm}
 vinp vinp vcm dc 0 ac 1
@@ -129,7 +130,7 @@ def render_netlist(p: OpAmpParams, model: NgspiceModel, out_path: str) -> str:
         _dev(model, "6", "vout", "outp", "0", "0", "n", p.wl6 * l, l),
     ])
     return _NETLIST.format(
-        header=model.header, devices=devices,
+        header=model.header, devices=devices, temp=model.temp,
         vdd=model.vdd, vcm=model.vdd / 2.0,
         itail=p.itail, i6=p.i6, cc=p.cc * 1e12, cl=model.cl_ff, out=out_path,
     )

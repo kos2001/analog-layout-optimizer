@@ -20,6 +20,7 @@ Usage:
   python alo.py ppa          [--pop N]       # NSGA-II power/perf/area Pareto front
   python alo.py scenario     <case>          # routing-algo comparison (bus/macro/diff)
   python alo.py ngspice-eval [--model sky130] # verify OTA on real SKY130 silicon
+  python alo.py pvt          [--full]        # SKY130 PVT corner analysis (worst-case)
 """
 
 from __future__ import annotations
@@ -350,6 +351,15 @@ def _signoff(args):
             "lvs_clean": so["lvs"]["clean"]}
 
 
+def _pvt(args):
+    """PVT corner analysis on real SKY130 (slow: ~15-18 s/corner). 3 corners, or --full=27."""
+    from layout_opt.pvt import run_pvt, full_grid
+    from layout_opt.opamp_opt import de_log_refine
+    p = de_log_refine(seed=args.seed).params
+    r = run_pvt(p, corners=full_grid()) if args.full else run_pvt(p)
+    return {"op": "pvt", **r}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Analog Layout Optimizer JSON CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -394,6 +404,10 @@ def main() -> int:
     p = sub.add_parser("signoff", help="place+route the OTA and run DRC+LVS sign-off")
     p.add_argument("--place", choices=["sa", "random"], default="sa")
     p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_signoff)
+    p = sub.add_parser("pvt", help="SKY130 PVT corner analysis (slow; needs PDK_ROOT)")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--full", action="store_true", help="all 27 P/V/T corners (default: 3 essential)")
+    p.set_defaults(fn=_pvt)
     args = ap.parse_args()
     print(json.dumps(args.fn(args), indent=2))
     return 0

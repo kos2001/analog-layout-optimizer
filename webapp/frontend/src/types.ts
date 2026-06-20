@@ -385,3 +385,14 @@ export interface NgspiceEval {
   modelKind?: string; sky130Available?: boolean;
   analytic: SimSpecs; sim?: SimSpecs; status: string; error?: string;
 }
+
+export interface PVTCorner {
+  process: string; temp_c: number; vdd: number;
+  gain_db: number; gbw_mhz: number; pm_deg: number;
+}
+export interface PVTData {
+  available: boolean; error?: string;
+  nCorners?: number; corners?: PVTCorner[];
+  worst?: { gain_db: number; gbw_mhz: number; pm_deg: number };
+  nominal?: PVTCorner; stable?: boolean;
+}

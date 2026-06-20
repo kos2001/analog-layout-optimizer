@@ -422,6 +422,15 @@ def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False) -> dic
     return run_end_to_end(place=place, seed=seed, sky130=sky130)
 
 
+@app.get("/api/pvt")
+def get_pvt(seed: int = 0, full: bool = False) -> dict:
+    """PVT corner sweep on real SKY130 silicon (slow: ~15-18 s per corner)."""
+    from layout_opt.pvt import run_pvt, full_grid
+    from layout_opt.opamp_opt import de_log_refine
+    p = de_log_refine(seed=seed).params
+    return run_pvt(p, corners=full_grid()) if full else run_pvt(p)
+
+
 # --------------------------------------------------------------------------
 # T-coil frequency response
 # --------------------------------------------------------------------------

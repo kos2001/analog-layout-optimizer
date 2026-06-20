@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { fetchOpamp, fetchOpampBode, fetchOpampStudy, fetchPreflight, fetchSpectreEval, fetchNgspiceEval } from "../api";
+import { fetchOpamp, fetchOpampBode, fetchOpampStudy, fetchPreflight, fetchSpectreEval, fetchNgspiceEval, fetchPVT } from "../api";
 import { useT } from "../i18n";
-import type { BodeData, NgspiceEval, OpAmpResult, OpAmpStudy, Preflight, SpectreEval } from "../types";
+import type { BodeData, NgspiceEval, OpAmpResult, OpAmpStudy, Preflight, SpectreEval, PVTData } from "../types";
 
 function BodePanel({ bode }: { bode: BodeData }) {
   const W = 380, H = 200, padL = 40, padB = 24, padT = 10, padR = 10;
@@ -34,6 +34,7 @@ export default function OpAmpView() {
   const [backend, setBackend] = useState<"spectre" | "ngspice">("ngspice");
   const [ngModel, setNgModel] = useState<"generic" | "sky130">("generic");
   const [bode, setBode] = useState<BodeData | null>(null);
+  const [pvt, setPvt] = useState<PVTData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -238,6 +239,57 @@ export default function OpAmpView() {
           license-free closed loop now; Spectre is the commercial path via
           virtuoso-bridge. Swapping the backend doesn't change the optimizer.
         </p>
+      </section>
+
+      {/* PVT corner analysis on real SKY130 */}
+      <section className="panel" style={{ gridColumn: "1 / -1" }}>
+        <div className="panel-title">
+          PVT corners — worst-case across process / voltage / temperature (SKY130)
+          {pvt?.available && pvt.stable !== undefined && (
+            <span className={pvt.stable ? "badge ok" : "badge bad"}>
+              {pvt.stable ? "robust (PM > 45° all corners)" : "fails a corner"}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={run("pvt", async () => setPvt(await fetchPVT(false)))}
+          disabled={busy !== null}>
+          {busy === "pvt" ? "Sweeping corners… (~1 min)" : "Run PVT (3 corners, real SKY130)"}
+        </button>
+        <span className="note" style={{ marginLeft: 10 }}>
+          each corner is a real ~15 s ngspice run
+        </span>
+        {pvt && !pvt.available && (
+          <p className="note" style={{ color: "var(--muted)", marginTop: 8 }}>{pvt.error}</p>
+        )}
+        {pvt?.available && pvt.corners && (
+          <div style={{ marginTop: 12 }}>
+            <table className="tcoil-table">
+              <thead><tr><th>corner</th><th>gain dB</th><th>GBW MHz</th><th>PM deg</th></tr></thead>
+              <tbody>
+                {pvt.corners.map((c, i) => (
+                  <tr key={i}>
+                    <td>{c.process} · {c.temp_c}°C · {c.vdd}V{c.process === pvt.nominal?.process && c.temp_c === pvt.nominal?.temp_c ? " (nominal)" : ""}</td>
+                    <td>{c.gain_db}</td><td>{c.gbw_mhz}</td>
+                    <td style={{ color: c.pm_deg < 45 ? "var(--bad)" : "var(--text)" }}>{c.pm_deg}</td>
+                  </tr>
+                ))}
+                {pvt.worst && (
+                  <tr style={{ fontWeight: 700 }}>
+                    <td>worst case</td><td>{pvt.worst.gain_db}</td><td>{pvt.worst.gbw_mhz}</td>
+                    <td style={{ color: pvt.worst.pm_deg < 45 ? "var(--bad)" : "var(--ok)" }}>{pvt.worst.pm_deg}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <p className="note">
+              Real SKY130 BSIM across slow/typical/fast process × hot/cold × supply ±10%.
+              A design that meets spec at nominal can still fail a corner — worst-case
+              sign-off is what tape-out actually requires. (Use the CLI <code>alo.py pvt --full</code>
+              for all 27 corners.)
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );
