@@ -158,3 +158,97 @@ def adapt(overrides: ProcessOverrides, *, seed: int = 0, maxiter: int = 150) -> 
             "note": "schematic/topology unchanged; only geometry + routing re-optimized",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Full process-change effects: a foundry/process change touches far more than
+# the geometric DRC rules. This models the device-model + voltage impact (OTA
+# re-sizing) and enumerates the complete taxonomy of what a node change affects.
+# ---------------------------------------------------------------------------
+def device_resize(tech: dict, *, seed: int = 0) -> dict:
+    """Re-size the OTA under a changed device model / supply.
+
+    tech keys (all optional, multiplicative unless noted):
+      kp_n_mult, kp_p_mult  transconductance-parameter scaling (mobility*Cox)
+      lambda_mult           channel-length-modulation scaling (affects gain)
+      vdd                   new supply voltage (absolute, volts)
+    Temporarily overrides the opamp module constants, re-runs sizing, restores.
+    """
+    import layout_opt.opamp as O
+    from layout_opt.opamp_opt import de_log_refine
+
+    keys = ("KP_N", "KP_P", "LAMBDA_N", "LAMBDA_P", "VDD")
+    saved = {k: getattr(O, k) for k in keys}
+
+    def _size() -> dict:
+        d = de_log_refine(seed=seed)
+        s = d.specs
+        return {"feasible": d.feasible, "power_mw": round(d.power_mw, 4),
+                "gain_db": round(s.gain_db, 2), "gbw_mhz": round(s.gbw_hz / 1e6, 2),
+                "pm_deg": round(s.pm_deg, 2)}
+
+    before = _size()
+    try:
+        if "kp_n_mult" in tech:
+            O.KP_N = saved["KP_N"] * float(tech["kp_n_mult"])
+        if "kp_p_mult" in tech:
+            O.KP_P = saved["KP_P"] * float(tech["kp_p_mult"])
+        if "lambda_mult" in tech:
+            O.LAMBDA_N = saved["LAMBDA_N"] * float(tech["lambda_mult"])
+            O.LAMBDA_P = saved["LAMBDA_P"] * float(tech["lambda_mult"])
+        if "vdd" in tech:
+            O.VDD = float(tech["vdd"])
+        after = _size()
+    finally:
+        for k, v in saved.items():
+            setattr(O, k, v)
+    return {"before": before, "after": after, "tech": tech,
+            "vdd_before": saved["VDD"], "vdd_after": tech.get("vdd", saved["VDD"])}
+
+
+def effect_taxonomy() -> list[dict]:
+    """All the things a foundry/process change affects, and how this tool covers them."""
+    return [
+        {"category": "DRC geometry", "modeled": True,
+         "what": "min poly pitch / L / W / guard gap; metal width/spacing/via/enclosure",
+         "tool": "adapt(): re-optimize placement + routing to new floors"},
+        {"category": "Device model", "modeled": True,
+         "what": "KP=µ·Cox, λ (output resistance), Vth → gm, gain, GBW",
+         "tool": "device_resize(): re-size the OTA under the new model"},
+        {"category": "Supply voltage", "modeled": True,
+         "what": "VDD scaling → headroom, overdrive windows, power",
+         "tool": "device_resize(vdd=...): new power/feasibility"},
+        {"category": "Metal stack", "modeled": True,
+         "what": "layer count/thickness, sheet R, per-layer min width/space/via",
+         "tool": "adapt(): routing rules (min_m_width/spacing/via/enclosure)"},
+        {"category": "Electromigration (EM)", "modeled": False,
+         "what": "per-width current limits → minimum wire/rail widths",
+         "tool": "noted — would add a current-density constraint to routing widths"},
+        {"category": "Density / CMP", "modeled": False,
+         "what": "min/max metal & poly density, fill requirements",
+         "tool": "noted — would add fill / density checks"},
+        {"category": "Antenna", "modeled": False,
+         "what": "max gate-area / metal-area ratio per net",
+         "tool": "noted — would add antenna ratio checks during routing"},
+        {"category": "Matching / variation", "modeled": False,
+         "what": "σVth ∝ 1/√(WL); area for matching grows at smaller nodes",
+         "tool": "noted — would add a matching-area constraint to sizing"},
+    ]
+
+
+def process_effects(overrides: ProcessOverrides, tech: dict | None = None, *,
+                    seed: int = 0, maxiter: int = 120) -> dict:
+    """Combined view: geometry adapt + device re-size + the full effect taxonomy."""
+    tech = tech or {}
+    geom = adapt(overrides, seed=seed, maxiter=maxiter)
+    dev = device_resize(tech, seed=seed) if tech else None
+    return {
+        "drc_overrides": dict(overrides.values),
+        "geometry": {"before_area": geom.before["total_area_um2"],
+                     "after_area": geom.after["total_area_um2"],
+                     "area_delta_pct": round(geom.area_delta_pct, 1),
+                     "drc_clean": geom.after["drc_clean"]},
+        "device": dev,
+        "topology_fixed": geom.topology_fixed,
+        "taxonomy": effect_taxonomy(),
+    }

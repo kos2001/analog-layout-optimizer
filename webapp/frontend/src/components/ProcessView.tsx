@@ -1,7 +1,81 @@
 import { useState } from "react";
-import { adaptProcess } from "../api";
-import type { AdaptResponse, AdaptSide } from "../types";
+import { adaptProcess, processEffects } from "../api";
+import { useT } from "../i18n";
+import type { AdaptResponse, AdaptSide, ProcessEffects } from "../types";
 import LayoutCanvas from "./LayoutCanvas";
+
+// "Shrink to a finer node" preset: higher µCox, shorter-channel (higher λ),
+// lower supply — the device-model side of a process change.
+const SHRINK_TECH = { kp_n_mult: 1.5, kp_p_mult: 1.5, lambda_mult: 1.4, vdd: 0.9 };
+
+function EffectsPanel({ nl }: { nl: string }) {
+  const [r, setR] = useState<ProcessEffects | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try { setR(await processEffects(nl, SHRINK_TECH)); } finally { setBusy(false); }
+  };
+  return (
+    <section className="panel" style={{ gridColumn: "1 / -1" }}>
+      <div className="panel-title">
+        What a foundry process change actually affects
+        <button onClick={run} disabled={busy}>
+          {busy ? "Computing…" : "Show full effects (shrink node)"}
+        </button>
+      </div>
+      {!r ? (
+        <p className="note">
+          A node change is more than DRC: it also changes the device model, supply,
+          metal stack, and reliability rules. Click to quantify the modeled ones and
+          list the rest.
+        </p>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 10 }}>
+            <div className="metrics" style={{ flexDirection: "column", gap: 6 }}>
+              <strong style={{ fontSize: 12, color: "var(--muted)" }}>DRC geometry (placement+routing)</strong>
+              <span className="note">area {r.geometry.before_area} → {r.geometry.after_area} µm²
+                ({r.geometry.area_delta_pct >= 0 ? "+" : ""}{r.geometry.area_delta_pct}%), DRC {r.geometry.drc_clean ? "clean ✓" : "✗"}</span>
+            </div>
+            {r.device && (
+              <div className="metrics" style={{ flexDirection: "column", gap: 6 }}>
+                <strong style={{ fontSize: 12, color: "var(--muted)" }}>
+                  Device model + supply (VDD {r.device.vdd_before}→{r.device.vdd_after} V): OTA re-size
+                </strong>
+                <span className="note">
+                  power {r.device.before.power_mw}→{r.device.after.power_mw} mW ·
+                  gain {r.device.before.gain_db}→{r.device.after.gain_db} dB ·
+                  GBW {r.device.before.gbw_mhz}→{r.device.after.gbw_mhz} MHz ·
+                  <span style={{ color: r.device.after.feasible ? "var(--ok)" : "var(--bad)" }}>
+                    {" "}{r.device.after.feasible ? "still meets specs ✓" : "no longer meets specs ✗ (re-design)"}</span>
+                </span>
+              </div>
+            )}
+          </div>
+          <table className="tcoil-table">
+            <thead><tr><th>category</th><th>handled</th><th>what changes</th></tr></thead>
+            <tbody>
+              {r.taxonomy.map((e) => (
+                <tr key={e.category}>
+                  <td>{e.category}</td>
+                  <td style={{ color: e.modeled ? "var(--ok)" : "var(--muted)" }}>
+                    {e.modeled ? "✓ modeled" : "noted"}</td>
+                  <td style={{ color: "var(--muted)" }}>{e.what}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="note">
+            Schematic/topology stays fixed for the geometry adapt; but the device-model
+            change can break performance (gain/GBW), so the sizing — and sometimes the
+            schematic — must be revisited. EM / density / antenna / matching are listed
+            as the next constraints to add.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
 
 const EXAMPLES = [
   "Migrate to a coarser node: min poly pitch 0.30 um, metal spacing 0.12 um, gate length 0.06, drive total W/L 3.0",
@@ -38,6 +112,7 @@ function Side({ title, side }: { title: string; side: AdaptSide }) {
 }
 
 export default function ProcessView() {
+  const { t } = useT();
   const [text, setText] = useState(EXAMPLES[0]);
   const [res, setRes] = useState<AdaptResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -54,7 +129,7 @@ export default function ProcessView() {
     <div className="grid">
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          Process change — describe it in natural language
+          {t("process.title")}
         </div>
         <textarea
           value={text}
@@ -98,6 +173,7 @@ export default function ProcessView() {
           </>
         )}
       </section>
+      <EffectsPanel nl={text} />
     </div>
   );
 }

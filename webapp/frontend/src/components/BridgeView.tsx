@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { fetchBridge, fetchSkill } from "../api";
+import { useT } from "../i18n";
 import type { BridgeData, SkillData } from "../types";
 
 export default function BridgeView() {
+  const { t } = useT();
   const [data, setData] = useState<BridgeData | null>(null);
   const [skill, setSkill] = useState<SkillData | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -28,7 +30,7 @@ export default function BridgeView() {
     <div className="grid">
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          virtuoso_bridge — features verified WITHOUT Virtuoso
+          {t("bridge.title")}
           <span className={data.allOk ? "badge ok" : "badge bad"}>
             {data.allOk ? "all checks pass" : "some failed"}
           </span>
@@ -55,7 +57,7 @@ export default function BridgeView() {
 
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          Real server connection (preflight)
+          {t("bridge.server")}
           <span className={data.preflight.ready ? "badge ok" : "badge bad"}>
             {data.preflight.ready ? "Spectre ready" : "not connected"}
           </span>
@@ -72,7 +74,7 @@ export default function BridgeView() {
       {skill && (
         <section className="panel" style={{ gridColumn: "1 / -1" }}>
           <div className="panel-title">
-            Generated SKILL — the bridge's output for the optimized cell
+            {t("skill.title")}
             <span>
               <button className="secondary" style={{ marginRight: 6 }}
                 onClick={() => navigator.clipboard.writeText(skill.il)}>Copy</button>
