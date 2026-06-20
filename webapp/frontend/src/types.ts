@@ -278,6 +278,16 @@ export interface GdsStats {
 }
 export interface GdsExport { filename: string; gdsBase64: string; bytes: number; stats: GdsStats; }
 
+export interface KlayoutDrcLayer {
+  layer: string; gds: number[]; polygons: number;
+  min_width_um: number; min_space_um: number;
+  width_violations: number; space_violations: number; samples: number[][];
+}
+export interface KlayoutDrc {
+  available: boolean; error?: string; tool?: string;
+  clean?: boolean; total?: number; layers?: KlayoutDrcLayer[];
+}
+
 export interface FlowStage { name: string; status: string; detail: string; }
 export interface FlowSizing {
   feasible: boolean; gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number;
