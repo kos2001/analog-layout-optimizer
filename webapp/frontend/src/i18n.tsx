@@ -17,7 +17,24 @@ const S: Record<string, { en: string; ko: string }> = {
   "tab.bridge": { en: "Bridge / SKILL", ko: "Bridge / SKILL" },
   "tab.agent": { en: "Agent", ko: "Agent" },
   "tab.complex": { en: "Complex cases", ko: "복잡 사례" },
+  "tab.ppa": { en: "PPA", ko: "PPA" },
   "loading": { en: "Loading…", ko: "불러오는 중…" },
+
+  // PPA
+  "ppa.title": { en: "PPA optimization — power / performance / area Pareto front", ko: "PPA 최적화 — 전력/성능/면적 Pareto front" },
+  "ppa.front": { en: "Pareto designs", ko: "Pareto 설계" },
+  "ppa.running": { en: "Running NSGA-II…", ko: "NSGA-II 실행 중…" },
+  "ppa.scatter.note": {
+    en: "Each dot is a design: x=power, y=GBW (performance), color=area (green small → red large). The colored front is Pareto-optimal; gray dots are dominated. No single best — only trade-offs.",
+    ko: "점 하나가 설계: x=전력, y=GBW(성능), 색=면적(초록 작음→빨강 큼). 색칠된 front가 Pareto 최적, 회색은 지배됨. 단일 최적은 없고 trade-off만 존재." },
+  "ppa.pref": { en: "Preference weights (pick a point on the front)", ko: "선호 가중치 (front에서 한 점 선택)" },
+  "ppa.w.power": { en: "minimize power", ko: "전력 최소화" },
+  "ppa.w.area": { en: "minimize area", ko: "면적 최소화" },
+  "ppa.w.perf": { en: "maximize GBW", ko: "GBW 최대화" },
+  "ppa.chosen": { en: "Chosen design (white ring)", ko: "선택된 설계 (흰 원)" },
+  "ppa.rerun": { en: "Re-run NSGA-II", ko: "NSGA-II 재실행" },
+  "ppa.ranges": { en: "Front spans", ko: "Front 범위" },
+  "ppa.constraint.note": { en: "All feasible", ko: "전부 제약 충족" },
 
   // complex cases — routing scenarios + common-centroid
   "cx.routing.title": { en: "Real-work routing cases — algorithm comparison", ko: "실무 라우팅 사례 — 알고리즘 비교" },

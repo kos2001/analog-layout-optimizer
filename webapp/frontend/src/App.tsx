@@ -11,12 +11,13 @@ import SurrogateView from "./components/SurrogateView";
 import BridgeView from "./components/BridgeView";
 import AgentConsole from "./components/AgentConsole";
 import ComplexCasesView from "./components/ComplexCasesView";
+import PPAView from "./components/PPAView";
 import { useT } from "./i18n";
 import type { Config, LayoutPayload, OptimizeResult, Params } from "./types";
 
 export default function App() {
   const { t, lang, setLang } = useT();
-  const [tab, setTab] = useState<"layout" | "comparator" | "complex" | "tcoil" | "opamp" | "process" | "surrogate" | "bridge" | "agent">("layout");
+  const [tab, setTab] = useState<"layout" | "comparator" | "complex" | "ppa" | "tcoil" | "opamp" | "process" | "surrogate" | "bridge" | "agent">("layout");
   const [config, setConfig] = useState<Config | null>(null);
   const [params, setParams] = useState<Params | null>(null);
   const [layout, setLayout] = useState<LayoutPayload | null>(null);
@@ -113,7 +114,7 @@ export default function App() {
         <nav className="tabs">
           {([
             ["layout", "tab.layout"], ["comparator", "tab.comparator"],
-            ["complex", "tab.complex"], ["tcoil", "tab.tcoil"],
+            ["complex", "tab.complex"], ["ppa", "tab.ppa"], ["tcoil", "tab.tcoil"],
             ["opamp", "tab.opamp"], ["process", "tab.process"], ["surrogate", "tab.surrogate"],
             ["bridge", "tab.bridge"], ["agent", "tab.agent"],
           ] as const).map(([id, key]) => (
@@ -126,6 +127,7 @@ export default function App() {
 
       {tab === "comparator" && <MazeView />}
       {tab === "complex" && <ComplexCasesView />}
+      {tab === "ppa" && <PPAView />}
       {tab === "tcoil" && <TCoilView />}
       {tab === "opamp" && <OpAmpView />}
       {tab === "process" && <ProcessView />}

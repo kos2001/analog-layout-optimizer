@@ -188,6 +188,23 @@ export interface CCLayout {
 }
 export interface CCCompare { rows: number; cols: number; strategies: CCLayout[]; }
 
+// --- PPA (power / performance / area) multi-objective ---
+export interface PPAPoint {
+  power_mw: number; area_um2: number; gbw_mhz: number;
+  gain_db: number; pm_deg: number; feasible: boolean;
+  sizing: { wl1: number; wl3: number; wl6: number;
+    itail_uA: number; i6_uA: number; cc_pF: number };
+}
+export interface PPAData {
+  pareto: PPAPoint[];
+  cloud: { power_mw: number; area_um2: number; gbw_mhz: number }[];
+  chosen: PPAPoint | null;
+  weights: { power: number; area: number; perf: number };
+  ranges: { power_mw: number[]; area_um2: number[]; gbw_mhz: number[] };
+  nParetoFront: number;
+  constraints: { gain_floor_db: number; pm_min_deg: number };
+}
+
 // --- T-coil ---
 export interface TcoilCurve {
   magDb: number[];
