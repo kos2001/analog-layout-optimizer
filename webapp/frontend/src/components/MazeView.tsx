@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchMaze } from "../api";
+import { useT } from "../i18n";
 import type { MazeData, MazeSolution } from "../types";
 
 const NET_COLORS: Record<string, string> = {
@@ -60,6 +61,7 @@ function Grid({ data, sol }: { data: MazeData; sol: MazeSolution }) {
 }
 
 export default function MazeView() {
+  const { t } = useT();
   const [data, setData] = useState<MazeData | null>(null);
   const [mode, setMode] = useState<"optimized" | "naive">("optimized");
   const [error, setError] = useState<string | null>(null);
@@ -69,16 +71,16 @@ export default function MazeView() {
   }, []);
 
   if (error) return <div className="fatal">Error: {error}</div>;
-  if (!data) return <div className="loading">Loading comparator…</div>;
+  if (!data) return <div className="loading">{t("loading")}</div>;
   const sol = data[mode];
 
   return (
     <div className="grid">
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          StrongARM comparator — maze routing ({data.netNames.length} nets)
+          {t("maze.title")} ({data.netNames.length} nets)
           <span className={sol.failed.length ? "badge bad" : "badge ok"}>
-            {sol.failed.length ? `${sol.failed.length} unrouted` : "all routed"}
+            {sol.failed.length ? `${sol.failed.length} unrouted` : t("all.routed")}
           </span>
         </div>
 
@@ -90,26 +92,26 @@ export default function MazeView() {
                 className={mode === "optimized" ? "" : "secondary"}
                 onClick={() => setMode("optimized")}
               >
-                Optimized order
+                {t("maze.optimized")}
               </button>
               <button
                 className={mode === "naive" ? "" : "secondary"}
                 onClick={() => setMode("naive")}
               >
-                Naive order
+                {t("maze.naive")}
               </button>
             </div>
             <div className="metrics" style={{ flexDirection: "column", gap: 10 }}>
               <div>
-                <span className="metric-label">total wirelength</span>
+                <span className="metric-label">{t("maze.total.wl")}</span>
                 <span className="metric-value">{sol.totalWirelength}</span>
               </div>
               <div>
-                <span className="metric-label">total bends</span>
+                <span className="metric-label">{t("maze.total.bends")}</span>
                 <span className="metric-value">{sol.totalBends}</span>
               </div>
               <div>
-                <span className="metric-label">worst order (for contrast)</span>
+                <span className="metric-label">{t("maze.worst")}</span>
                 <span className="metric-value">{data.worstWirelength}</span>
               </div>
             </div>

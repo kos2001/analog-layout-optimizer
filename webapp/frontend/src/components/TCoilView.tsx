@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { evalTcoil, fetchTcoil, geomTcoil } from "../api";
+import { useT } from "../i18n";
 import type { TcoilCurve, TcoilData, TcoilGeom } from "../types";
 
 function SpiralSVG({ geom }: { geom: TcoilGeom }) {
@@ -29,6 +30,7 @@ function SpiralSVG({ geom }: { geom: TcoilGeom }) {
 const G0 = { turns: 3, width: 3, spacing: 2, inner: 30, r_ohm: 300, cl_ff: 30, cb: 0.14 };
 
 function CoilLayout() {
+  const { t } = useT();
   const [g, setG] = useState(G0);
   const [res, setRes] = useState<TcoilGeom | null>(null);
   const deb = useRef<number | null>(null);
@@ -48,7 +50,7 @@ function CoilLayout() {
   return (
     <section className="panel" style={{ gridColumn: "1 / -1" }}>
       <div className="panel-title">
-        Coil layout — geometry determines L, k, and the response
+        {t("coil.title")}
         {res && <span className={Math.abs(res.peakingDb) < 0.5 ? "badge ok" : "badge bad"}>
           {res.bwExtension.toFixed(2)}× BW</span>}
       </div>
@@ -154,6 +156,7 @@ function Bode({
 }
 
 export default function TCoilView() {
+  const { t } = useT();
   const [data, setData] = useState<TcoilData | null>(null);
   const [custom, setCustom] = useState<TcoilCurve | null>(null);
   const [LkCb, setLkCb] = useState({ L: 0.3, k: 0.6, Cb: 0.15 });
@@ -191,7 +194,7 @@ export default function TCoilView() {
     <div className="grid">
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          Bridged T-coil — bandwidth extension (magnitude response)
+          {t("tcoil.title")}
           <span className="badge ok">{data.curves.tcoil.bwExtension.toFixed(2)}× BW</span>
         </div>
         <div className="maze-wrap">

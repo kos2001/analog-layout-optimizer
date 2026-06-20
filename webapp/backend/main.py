@@ -739,3 +739,21 @@ def post_tcoil_geometry(body: GeomIn) -> dict:
         "freq": [float(x) for x in w],
         "magDb": [round(float(20.0 * np.log10(m + 1e-12)), 3) for m in mag],
     }
+
+
+# --------------------------------------------------------------------------
+# Full foundry process-change effects (DRC geometry + device model + taxonomy)
+# --------------------------------------------------------------------------
+class EffectsIn(BaseModel):
+    nl: str = ""
+    overrides: dict = {}
+    tech: dict = {}          # kp_n_mult, kp_p_mult, lambda_mult, vdd
+
+
+@app.post("/api/process/effects")
+def post_process_effects(body: EffectsIn) -> dict:
+    from layout_opt.process_change import (
+        ProcessOverrides, parse_process_nl, process_effects,
+    )
+    ov = ProcessOverrides(body.overrides) if body.overrides else parse_process_nl(body.nl)
+    return process_effects(ov, body.tech or None, maxiter=120)

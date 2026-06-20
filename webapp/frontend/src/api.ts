@@ -118,3 +118,12 @@ export async function geomTcoil(b: {
     body: JSON.stringify(b),
   }));
 }
+
+import type { ProcessEffects } from "./types";
+
+export async function processEffects(nl: string, tech: Record<string, number>): Promise<ProcessEffects> {
+  return jsonOrThrow<ProcessEffects>(await fetch("/api/process/effects", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nl, tech }),
+  }));
+}
