@@ -11,9 +11,9 @@ const KIND_FILL: Record<string, string> = {
   nmos: "#1c3b57", pmos: "#532a1c", cap: "#3a2a52", port: "#30363d",
 };
 
-function FlowGrid({ data, netColor, hover, setHover }: {
+function FlowGrid({ data, netColor, hover, setHover, showDrc }: {
   data: FlowData; netColor: (n: string) => string;
-  hover: string | null; setHover: (n: string | null) => void;
+  hover: string | null; setHover: (n: string | null) => void; showDrc: boolean;
 }) {
   const cs = Math.max(10, Math.floor(620 / data.width));
   const W = data.width * cs, H = data.height * cs;
@@ -76,18 +76,66 @@ function FlowGrid({ data, netColor, hover, setHover }: {
           </g>
         );
       })}
+      {/* DRC violation markers */}
+      {showDrc && data.routing.drc.violations.map((v, i) => {
+        const col = v.rule === "corner" ? "#ffd54f" : "#ff1744";
+        return v.cells.map((c, j) => {
+          const cx = c[0] * cs + cs / 2, cy = c[1] * cs + cs / 2, r = cs * 0.42;
+          return (
+            <g key={`d${i}-${j}`}>
+              <circle cx={cx} cy={cy} r={r} fill="none" stroke={col} strokeWidth={1.6} />
+              <line x1={cx - r * 0.6} y1={cy - r * 0.6} x2={cx + r * 0.6} y2={cy + r * 0.6} stroke={col} strokeWidth={1.4} />
+              <line x1={cx - r * 0.6} y1={cy + r * 0.6} x2={cx + r * 0.6} y2={cy - r * 0.6} stroke={col} strokeWidth={1.4} />
+              <title>{v.rule}: {v.message}</title>
+            </g>
+          );
+        });
+      })}
     </svg>
+  );
+}
+
+function SignoffPanel({ data }: { data: FlowData }) {
+  const { t } = useT();
+  const so = data.signoff;
+  const pass = so.verdict === "PASS";
+  return (
+    <div style={{
+      border: `1px solid ${pass ? "var(--ok)" : "var(--bad)"}`, borderRadius: 8,
+      padding: "10px 14px", margin: "6px 0 12px", background: "#0d1117",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 13 }}>{t("flow.signoff")}</strong>
+        <span className={pass ? "badge ok" : "badge bad"} style={{ fontSize: 13 }}>
+          {pass ? `✓ ${t("flow.signoff.pass")}` : `✗ ${t("flow.signoff.fail")}`}
+        </span>
+        {so.drcWarnings > 0 && (
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>{so.drcWarnings} {t("flow.warnings")}</span>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 8 }}>
+        {so.checks.map((c) => (
+          <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: c.status === "pass" ? "var(--ok)" : "var(--bad)", fontWeight: 700 }}>
+              {c.status === "pass" ? "✓" : "✗"}
+            </span>
+            <span style={{ fontSize: 12 }}><b>{c.name}</b> <span style={{ color: "var(--muted)" }}>— {c.detail}</span></span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
 export default function FlowView() {
   const { t } = useT();
   const [place, setPlace] = useState<"sa" | "random">("sa");
-  const [seed, setSeed] = useState(0);
+  const [seed, setSeed] = useState(1);
   const [data, setData] = useState<FlowData | null>(null);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
+  const [showDrc, setShowDrc] = useState(true);
 
   useEffect(() => {
     setBusy(true); setErr(null);
@@ -112,11 +160,16 @@ export default function FlowView() {
           <button className={place === "sa" ? "" : "secondary"} onClick={() => setPlace("sa")}>{t("flow.sa")}</button>
           <button className={place === "random" ? "" : "secondary"} onClick={() => setPlace("random")}>{t("flow.random")}</button>
           <button className="secondary" onClick={() => setSeed(Math.floor(Math.random() * 1e6))}>{t("flow.rerun")}</button>
+          <button className={showDrc ? "" : "secondary"} onClick={() => setShowDrc((s) => !s)}>{t("flow.drc.toggle")}</button>
         </div>
+
+        {data && (
+          <SignoffPanel data={data} />
+        )}
 
         {busy || !data || !r ? <div className="loading">{t("flow.running")}</div> : (
           <div className="maze-wrap">
-            <FlowGrid data={data} netColor={netColor} hover={hover} setHover={setHover} />
+            <FlowGrid data={data} netColor={netColor} hover={hover} setHover={setHover} showDrc={showDrc} />
             <div className="maze-side" style={{ minWidth: 280 }}>
               <div className="metrics" style={{ flexDirection: "column", gap: 8 }}>
                 <div><span className="metric-label">{t("flow.hpwl")}</span><span className="metric-value">{data.hpwl}</span></div>
