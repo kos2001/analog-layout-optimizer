@@ -30,8 +30,13 @@ const S: Record<string, { en: string; ko: string }> = {
   "flow.hpwl": { en: "HPWL (placement cost)", ko: "HPWL (배치 비용)" },
   "flow.netlist": { en: "Netlist (net → terminals) — hover to highlight", ko: "Netlist (넷 → 단자) — 마우스 올리면 강조" },
   "flow.note": {
-    en: "The OTA netlist is the single source of truth: each terminal becomes a pin on its net, and same-net pins become one router net — placement pins and routing nets can't drift apart. SA placement minimizes HPWL, and a tighter HPWL yields a shorter route (compare SA vs random). Hover a net to see it across the netlist, the device pins, and the wires.",
-    ko: "OTA netlist이 단일 진실원천입니다: 각 단자가 그 넷의 핀이 되고, 같은 넷 핀들이 하나의 라우터 넷이 됩니다 — 배치 핀과 배선 넷이 어긋날 수 없습니다. SA 배치는 HPWL을 최소화하고, HPWL이 작을수록 배선이 짧아집니다(SA vs 랜덤 비교). 넷에 마우스를 올리면 netlist·소자 핀·배선에서 동시에 강조됩니다." },
+    en: "The OTA netlist is the single source of truth: each terminal becomes a pin on its net, and same-net pins become one router net — placement pins and routing nets can't drift apart. SA placement minimizes HPWL, and a tighter HPWL yields a shorter route (compare SA vs random). Hover a net to see it across the netlist, the device pins, and the wires. Sign-off then verifies the result: LVS checks the layout connects the same nodes as the schematic, DRC checks geometry rules (× markers: red=error, yellow=corner warning).",
+    ko: "OTA netlist이 단일 진실원천입니다: 각 단자가 그 넷의 핀이 되고, 같은 넷 핀들이 하나의 라우터 넷이 됩니다 — 배치 핀과 배선 넷이 어긋날 수 없습니다. SA 배치는 HPWL을 최소화하고, HPWL이 작을수록 배선이 짧아집니다(SA vs 랜덤 비교). 넷에 마우스를 올리면 netlist·소자 핀·배선에서 동시에 강조됩니다. 그 뒤 sign-off가 결과를 검증합니다: LVS는 레이아웃이 schematic과 같은 노드를 연결하는지, DRC는 기하 규칙을 확인합니다(× 표시: 빨강=에러, 노랑=corner 경고)." },
+  "flow.drc.toggle": { en: "DRC markers", ko: "DRC 표시" },
+  "flow.signoff": { en: "Sign-off", ko: "Sign-off (검증)" },
+  "flow.signoff.pass": { en: "PASS (tape-out clean)", ko: "PASS (테이프아웃 가능)" },
+  "flow.signoff.fail": { en: "FAIL", ko: "FAIL" },
+  "flow.warnings": { en: "DRC warnings", ko: "DRC 경고" },
 
   // PPA
   "ppa.title": { en: "PPA optimization — power / performance / area Pareto front", ko: "PPA 최적화 — 전력/성능/면적 Pareto front" },
