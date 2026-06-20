@@ -132,6 +132,62 @@ export interface FloorplanData {
   nets: Record<string, MazeNet>;
 }
 
+// --- Complex routing scenarios (multi-layer + algorithms) ---
+export interface ScenarioNet {
+  pins: number[][];        // [x,y] or [x,y,layer]
+  cells: number[][];
+  wirelength: number;
+  vias?: number;
+  routed: boolean;
+}
+export interface ScenarioAlgo {
+  algo: string;
+  ms: number;
+  totalWirelength: number;
+  totalVias?: number;
+  failed: string[];
+  nets: Record<string, ScenarioNet>;
+  order?: string[] | null;
+  iterations?: number;
+  converged?: boolean;
+  overused?: number;
+}
+export interface DiffVariant {
+  matched: boolean;
+  mismatch: number;
+  coupled: number;
+  routed: boolean;
+  lenA: number;
+  lenB: number;
+  nets: Record<string, ScenarioNet>;
+}
+export interface ScenarioData {
+  width: number;
+  height: number;
+  layers?: number;
+  blocked: number[][];     // [x,y] (2D) or [x,y,layer] (multilayer)
+  info: { key: string; title: string; desc: string };
+  kind: "multinet" | "diffpair";
+  netNames?: string[];
+  algos?: Record<string, ScenarioAlgo>;
+  variants?: Record<string, DiffVariant>;
+}
+export interface ScenarioCase { key: string; title: string; }
+
+// --- Common-centroid matched array ---
+export interface CCRect {
+  device: string; row: number; col: number;
+  x0: number; y0: number; x1: number; y1: number;
+}
+export interface CCLayout {
+  strategy: string; rows: number; cols: number; pitch: number;
+  rects: CCRect[];
+  centroidA: number[]; centroidB: number[]; centroidOffset: number;
+  mismatchX: number; mismatchY: number; mismatchDiag: number;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+}
+export interface CCCompare { rows: number; cols: number; strategies: CCLayout[]; }
+
 // --- T-coil ---
 export interface TcoilCurve {
   magDb: number[];
