@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchOpamp, fetchOpampBode, fetchOpampStudy, fetchPreflight, fetchSpectreEval } from "../api";
+import { useT } from "../i18n";
 import type { BodeData, OpAmpResult, OpAmpStudy, Preflight, SpectreEval } from "../types";
 
 function BodePanel({ bode }: { bode: BodeData }) {
@@ -24,6 +25,7 @@ function BodePanel({ bode }: { bode: BodeData }) {
 }
 
 export default function OpAmpView() {
+  const { t } = useT();
   const [design, setDesign] = useState<OpAmpResult | null>(null);
   const [study, setStudy] = useState<OpAmpStudy | null>(null);
   const [pf, setPf] = useState<Preflight | null>(null);
@@ -52,7 +54,7 @@ export default function OpAmpView() {
       {/* Sizing result */}
       <section className="panel">
         <div className="panel-title">
-          Two-stage Miller OTA — min-power sizing
+          {t("opamp.title")}
           {design && (
             <span className={design.feasible ? "badge ok" : "badge bad"}>
               {design.feasible ? "specs met" : "infeasible"}
@@ -91,7 +93,7 @@ export default function OpAmpView() {
             </p>
             {bode && (
               <>
-                <div className="panel-title" style={{ marginTop: 8 }}>AC magnitude (sized design)</div>
+                <div className="panel-title" style={{ marginTop: 8 }}>{t("opamp.bode")}</div>
                 <BodePanel bode={bode} />
                 <p className="note">−3 dB line dashed; DC gain {bode.magDb[0].toFixed(1)} dB.</p>
               </>
@@ -103,7 +105,7 @@ export default function OpAmpView() {
       {/* Optimizer study */}
       <section className="panel">
         <div className="panel-title">
-          Optimizer experiment — which algorithm wins?
+          {t("opamp.study")}
           <button onClick={run("study", async () => setStudy(await fetchOpampStudy()))}
             disabled={busy !== null}>
             {busy === "study" ? "Running…" : "Compare"}
@@ -143,7 +145,7 @@ export default function OpAmpView() {
       {/* Spectre backend */}
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          Real-Spectre backend (closed loop)
+          {t("opamp.spectre")}
           {pf && (
             <span className={pf.ready ? "badge ok" : "badge bad"}>
               {pf.ready ? "Spectre ready" : "not connected"}
@@ -152,7 +154,7 @@ export default function OpAmpView() {
         </div>
         <button onClick={run("se", async () => setSe(await fetchSpectreEval()))}
           disabled={busy !== null}>
-          {busy === "se" ? "Verifying…" : "Verify with Spectre"}
+          {busy === "se" ? "Verifying…" : t("opamp.verify")}
         </button>
         {se && (
           <div style={{ marginTop: 12 }}>

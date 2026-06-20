@@ -192,3 +192,16 @@ export interface TcoilGeom {
   bwExtension: number; peakingDb: number;
   freq: number[]; magDb: number[];
 }
+
+// --- Full process-change effects ---
+export interface EffectRow { category: string; modeled: boolean; what: string; tool: string; }
+export interface ProcessEffects {
+  drc_overrides: Record<string, number>;
+  geometry: { before_area: number; after_area: number; area_delta_pct: number; drc_clean: boolean };
+  device: null | {
+    before: { power_mw: number; gain_db: number; gbw_mhz: number; pm_deg: number; feasible: boolean };
+    after: { power_mw: number; gain_db: number; gbw_mhz: number; pm_deg: number; feasible: boolean };
+    vdd_before: number; vdd_after: number;
+  };
+  taxonomy: EffectRow[];
+}

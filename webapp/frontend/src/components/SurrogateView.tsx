@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { fetchSurrogate } from "../api";
+import { useT } from "../i18n";
 import type { SurrogateData } from "../types";
 
 function Chart({ data }: { data: SurrogateData }) {
@@ -31,6 +32,7 @@ function Chart({ data }: { data: SurrogateData }) {
 }
 
 export default function SurrogateView() {
+  const { t } = useT();
   const [data, setData] = useState<SurrogateData | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export default function SurrogateView() {
     <div className="grid">
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          Surrogate-assisted optimization — learn the expensive FoM, call it rarely
+          {t("sur.title")}
           <button onClick={run} disabled={busy}>{busy ? "Running…" : "Run active learning"}</button>
         </div>
         {err && <p className="note" style={{ color: "var(--bad)" }}>{err}</p>}

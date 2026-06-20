@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { askAgent } from "../api";
+import { useT } from "../i18n";
 
 interface Turn { role: "user" | "agent" | "error"; text: string; }
 
@@ -10,6 +11,7 @@ const SUGGESTIONS = [
 ];
 
 export default function AgentConsole() {
+  const { t } = useT();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState(SUGGESTIONS[0]);
   const [busy, setBusy] = useState(false);
@@ -33,7 +35,7 @@ export default function AgentConsole() {
     <div className="grid">
       <section className="panel" style={{ gridColumn: "1 / -1" }}>
         <div className="panel-title">
-          Hermes agent console — natural language → tools (gpt-5.5 via api_server 8650)
+          {t("agent.title")}
         </div>
         <div style={{
           minHeight: 200, maxHeight: 360, overflowY: "auto", background: "#0d1117",
@@ -59,7 +61,7 @@ export default function AgentConsole() {
         <div style={{ display: "flex", gap: 8 }}>
           <input value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="ask the agent…" style={{
+            placeholder={t("agent.placeholder")} style={{
               flex: 1, background: "#0d1117", color: "var(--text)",
               border: "1px solid var(--border)", borderRadius: 8, padding: 10, fontSize: 14,
             }} />
