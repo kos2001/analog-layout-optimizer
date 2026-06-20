@@ -56,6 +56,14 @@ $PY $ALO opamp-study --seeds 6 # optimizer comparison (the log-space finding)
 $PY $ALO joint                 # device+routing co-optimization (full-cell area)
 $PY $ALO maze                  # comparator maze routing (wirelength, net order)
 $PY $ALO tcoil --peak 0.1      # T-coil bandwidth extension factor
+$PY $ALO full-flow [--sky130]  # ONE-CLICK end-to-end: sizing->P&R->sign-off->post-layout
+                               # ->[silicon]; returns per-stage status + overall verdict
+$PY $ALO signoff [--place sa]  # place+route the OTA, run DRC+LVS+connectivity sign-off
+$PY $ALO ppa                   # NSGA-II power/performance/area Pareto front + chosen design
+$PY $ALO scenario macro_power_grid   # routing-algo comparison: fixed vs best-order vs
+                               # PathFinder (also: bus_channel, diff_pair); shows DRC
+$PY $ALO ngspice-eval [--model sky130]  # verify OTA on REAL ngspice; --model sky130 =
+                               # real SkyWater SKY130 BSIM silicon (needs PDK_ROOT)
 $PY $ALO bridge-smoke          # offline-safe: check Arcadia engine import/CLI; no EDA server required
 $PY $ALO preflight             # optional future: check real-Spectre readiness (will be unready without EDA server)
 $PY $ALO bridge-smoke --live   # optional future: execute SKILL 1+2 only after bridge is configured
