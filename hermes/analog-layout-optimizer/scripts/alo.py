@@ -270,6 +270,29 @@ def _tcoil(args):
     }
 
 
+def _ngspice_eval(args):
+    """Verify a candidate OTA with REAL ngspice (open-source closed loop)."""
+    from layout_opt.opamp_opt import de_log_refine
+    from layout_opt.opamp import evaluate_opamp
+    from layout_opt.ngspice_backend import (
+        GENERIC_NGSPICE, NgspiceUnavailable, ngspice_available, ngspice_evaluate,
+    )
+    cand = de_log_refine(seed=args.seed).params
+    a = evaluate_opamp(cand)
+    out = {"op": "ngspice_eval", "model": GENERIC_NGSPICE.name,
+           "available": ngspice_available(),
+           "analytic": {"gain_db": round(a.gain_db, 2), "gbw_mhz": round(a.gbw_hz / 1e6, 2),
+                        "pm_deg": round(a.pm_deg, 2), "power_mw": round(a.power * 1e3, 4)}}
+    try:
+        s = ngspice_evaluate(cand, GENERIC_NGSPICE)
+        out["sim"] = {"gain_db": round(s.gain_db, 2), "gbw_mhz": round(s.gbw_hz / 1e6, 2),
+                      "pm_deg": round(s.pm_deg, 2), "power_mw": round(s.power * 1e3, 4)}
+        out["status"] = "ran_ngspice"
+    except NgspiceUnavailable as e:  # noqa: BLE001
+        out["status"] = "ngspice_unavailable"; out["error"] = str(e)
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Analog Layout Optimizer JSON CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -296,6 +319,7 @@ def main() -> int:
     p.add_argument("--nmos", default="nch_mac"); p.add_argument("--pmos", default="pch_mac")
     p.add_argument("--l-um", type=float, default=0.18, dest="l_um")
     p.set_defaults(fn=_spectre_eval)
+    p = sub.add_parser("ngspice-eval"); p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_ngspice_eval)
     args = ap.parse_args()
     print(json.dumps(args.fn(args), indent=2))
     return 0

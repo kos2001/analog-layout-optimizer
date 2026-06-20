@@ -127,3 +127,25 @@ export async function processEffects(nl: string, tech: Record<string, number>): 
     body: JSON.stringify({ nl, tech }),
   }));
 }
+
+import type { NgspiceEval } from "./types";
+
+export const fetchNgspiceEval = () =>
+  fetch("/api/opamp/ngspice-eval").then((r) => r.json() as Promise<NgspiceEval>);
+
+import type { FloorplanComponent, FloorplanData } from "./types";
+
+export const fetchFloorplanScenario = () =>
+  fetch("/api/floorplan/scenario").then((r) => r.json() as Promise<FloorplanData>);
+
+export async function routeFloorplan(
+  width: number, height: number, components: FloorplanComponent[], optimize: boolean,
+): Promise<FloorplanData> {
+  return jsonOrThrow<FloorplanData>(
+    await fetch("/api/floorplan/route", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ width, height, components, optimize }),
+    }),
+  );
+}
