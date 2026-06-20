@@ -270,6 +270,14 @@ export interface FlowData {
   signoff: Signoff;
   postlayout: PostLayout;
 }
+export interface GdsStats {
+  topCell: string; polygons: number;
+  counts: { metal: number; via: number; device: number };
+  layers: { layer: number; datatype: number }[];
+  bbox_um: number[][] | null; area_um2: number; pitch_um: number;
+}
+export interface GdsExport { filename: string; gdsBase64: string; bytes: number; stats: GdsStats; }
+
 export interface FlowStage { name: string; status: string; detail: string; }
 export interface FlowSizing {
   feasible: boolean; gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number;
