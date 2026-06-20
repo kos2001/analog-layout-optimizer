@@ -32,8 +32,8 @@ from . import drc as _drc
 def bus_channel() -> tuple[Grid3, dict[str, list[Cell3]], dict]:
     W, H = 50, 30
     g = Grid3(W, H, layers=2)
-    g.block_rect(16, 0, 27, 8)     # top macro (both layers)
-    g.block_rect(16, 21, 27, 29)   # bottom macro
+    g.block_rect(16, 0, 27, 7)     # top macro (both layers)
+    g.block_rect(16, 22, 27, 29)   # bottom macro
     nets: dict[str, list[Cell3]] = {}
     # 10-bit bus, source rows fanned wide -> must funnel through the channel and
     # fan back out. Endpoints on layer 0.
@@ -54,15 +54,15 @@ def bus_channel() -> tuple[Grid3, dict[str, list[Cell3]], dict]:
 def macro_power_grid() -> tuple[Grid3, dict[str, list[Cell3]], dict]:
     W, H = 44, 30
     g = Grid3(W, H, layers=2)
-    # Four hard IP macros leave a '+'-shaped routing channel (cols 19..24,
-    # rows 13..16) that every cross-chip signal must funnel through.
-    g.block_rect(0, 0, 18, 12)
-    g.block_rect(25, 0, 43, 12)
-    g.block_rect(0, 17, 18, 29)
-    g.block_rect(25, 17, 43, 29)
+    # Four hard IP macros leave a '+'-shaped routing channel (cols 18..25,
+    # rows 12..17) that every cross-chip signal must funnel through.
+    g.block_rect(0, 0, 17, 11)
+    g.block_rect(26, 0, 43, 11)
+    g.block_rect(0, 18, 17, 29)
+    g.block_rect(26, 18, 43, 29)
 
     def in_channel(x: int, y: int) -> bool:
-        return (13 <= y <= 16) or (19 <= x <= 24)
+        return (12 <= y <= 17) or (18 <= x <= 25)
 
     # Power grid: VDD straps on layer 0 (H), VSS on layer 1 (V), kept out of the
     # channel so it stays the bottleneck. Straps block their layer except gaps.
@@ -79,8 +79,11 @@ def macro_power_grid() -> tuple[Grid3, dict[str, list[Cell3]], dict]:
     pairs = [((2, 14), (42, 14)), ((42, 15), (2, 16)), ((21, 1), (22, 28)),
              ((2, 13), (42, 16)), ((42, 13), (2, 15)), ((20, 2), (23, 27)),
              ((3, 15), (41, 13)), ((41, 16), (3, 13))]
+    used: set[Cell3] = set()        # keep every pin on a distinct cell (no fake shorts)
     for i, (s, t) in enumerate(pairs):
-        nets[f"S{i}"] = [_free_near(g, s), _free_near(g, t)]
+        ps = _free_near(g, s, used); used.add(ps)
+        pt = _free_near(g, t, used); used.add(pt)
+        nets[f"S{i}"] = [ps, pt]
     info = {"key": "macro_power_grid", "title": "Signals through a macro channel + power grid",
             "desc": "8 cross-chip signals funnel through the '+' channel between "
                     "four hard macros, over a 2-layer power grid. Fixed-order A* "
@@ -88,11 +91,11 @@ def macro_power_grid() -> tuple[Grid3, dict[str, list[Cell3]], dict]:
     return g, nets, info
 
 
-def _free_near(g: Grid3, xy: tuple[int, int]) -> Cell3:
-    """Nearest unblocked layer-0 cell to (x,y)."""
+def _free_near(g: Grid3, xy: tuple[int, int], used: set = frozenset()) -> Cell3:
+    """Nearest unblocked, unused layer-0 cell to (x,y)."""
     from collections import deque
     start = (xy[0], xy[1], 0)
-    if g.in_bounds(start) and start not in g.blocked:
+    if g.in_bounds(start) and start not in g.blocked and start not in used:
         return start
     seen = {start}
     q = deque([start])
@@ -103,7 +106,7 @@ def _free_near(g: Grid3, xy: tuple[int, int]) -> Cell3:
             if n in seen:
                 continue
             seen.add(n)
-            if g.in_bounds(n) and n not in g.blocked:
+            if g.in_bounds(n) and n not in g.blocked and n not in used:
                 return n
             q.append(n)
     return start

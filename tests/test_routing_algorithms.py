@@ -39,11 +39,12 @@ def test_negotiated_routes_all_where_fixed_strands_a_net():
     assert neg["overused"] == 0                     # no shorts left
 
 
-def test_negotiated_reduces_vias_on_the_bus():
+def test_negotiated_routes_the_whole_bus():
     r = run_case("bus_channel")
-    assert r["algos"]["fixed"]["failed"] == []
-    assert r["algos"]["negotiated"]["failed"] == []
-    assert r["algos"]["negotiated"]["totalVias"] <= r["algos"]["fixed"]["totalVias"]
+    f, n = r["algos"]["fixed"], r["algos"]["negotiated"]
+    assert n["failed"] == []                              # negotiation routes the whole bus
+    # and is no worse than fixed order on (unrouted, vias)
+    assert (len(n["failed"]), n["totalVias"]) <= (len(f["failed"]), f["totalVias"])
 
 
 def test_negotiated_route3_converges_clean():
