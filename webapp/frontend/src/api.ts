@@ -149,3 +149,12 @@ export async function routeFloorplan(
     }),
   );
 }
+
+import type { ScenarioCase, ScenarioData, CCCompare } from "./types";
+
+export const fetchScenarioCases = () =>
+  fetch("/api/scenarios").then((r) => r.json() as Promise<{ cases: ScenarioCase[] }>);
+export const fetchScenario = (key: string) =>
+  fetch(`/api/scenarios/${key}`).then((r) => r.json() as Promise<ScenarioData>);
+export const fetchCommonCentroid = (rows = 4, cols = 4) =>
+  fetch(`/api/common-centroid?rows=${rows}&cols=${cols}`).then((r) => r.json() as Promise<CCCompare>);

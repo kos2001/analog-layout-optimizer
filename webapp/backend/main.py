@@ -37,6 +37,8 @@ from layout_opt.maze import route_all, optimize_net_order
 from layout_opt.interactive import (
     GRID_W, GRID_H, default_floorplan, route_components, components_from_payload,
 )
+from layout_opt import scenarios as _scn
+from layout_opt import common_centroid as _cc
 from layout_opt.tcoil import (
     TCoilParams,
     bandwidth,
@@ -371,6 +373,27 @@ def post_floorplan_route(body: FloorplanIn) -> dict:
     """Re-route an arbitrary placement (called on every drag)."""
     comps = components_from_payload(body.components)
     return route_components(body.width, body.height, comps, optimize=body.optimize)
+
+
+# --------------------------------------------------------------------------
+# Complex real-work cases: routing scenarios + common-centroid layout
+# --------------------------------------------------------------------------
+@app.get("/api/scenarios")
+def list_scenarios() -> dict:
+    return {"cases": _scn.CASES}
+
+
+@app.get("/api/scenarios/{key}")
+def get_scenario(key: str) -> dict:
+    if key not in {c["key"] for c in _scn.CASES}:
+        return {"error": f"unknown scenario {key}"}
+    return _scn.run_case(key)
+
+
+@app.get("/api/common-centroid")
+def get_common_centroid(rows: int = 4, cols: int = 4) -> dict:
+    rows = max(2, min(rows, 8)); cols = max(2, min(cols, 8))
+    return _cc.compare(rows, cols)
 
 
 # --------------------------------------------------------------------------

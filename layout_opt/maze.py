@@ -53,11 +53,17 @@ def astar(
     sources: set[Cell],
     targets: set[Cell],
     blocked: set[Cell],
+    cell_cost=None,
 ) -> list[Cell] | None:
     """Shortest rectilinear path from any source to any target avoiding blocked.
 
     Returns the path (inclusive of endpoints) or None if unreachable.
     State is (cell, incoming-direction) so the bend penalty can be applied.
+
+    ``cell_cost(cell) -> float`` adds a per-cell entry cost on top of the unit
+    step + bend penalty. It must be >= 0 (so the Manhattan heuristic stays
+    admissible); this is what lets a congestion-negotiating router *share*
+    cells at a price instead of treating every other net as a hard wall.
     """
     if not sources or not targets:
         return None
@@ -103,6 +109,8 @@ def astar(
             if nxt in blocked and nxt not in tset:
                 continue
             step = 1.0 + (BEND_PENALTY if (d != -1 and di != d) else 0.0)
+            if cell_cost is not None:
+                step += cell_cost(nxt)
             ng = g + step
             nkey = (nxt, di)
             if ng < best_g.get(nkey, float("inf")):
@@ -234,3 +242,188 @@ def optimize_net_order(
             best = sol
     assert best is not None
     return best
+
+
+# --------------------------------------------------------------------------
+# Negotiated-congestion routing (PathFinder) — the real-router algorithm.
+#
+# Fixed/best-order A* (above) is greedy: an early net walls off later ones, so
+# the result depends on net order (NP-hard to order well). Real routers instead
+# let nets *share* tracks at a negotiated price and iterate:
+#
+#   cost(cell) = (base + history[cell]) * present[cell]
+#
+# where present rises with how many nets currently use the cell and history
+# accumulates over iterations for cells that stayed congested. Each round every
+# net is ripped up and rerouted against the latest costs; nets with cheap
+# detours vacate contested cells, leaving them to nets that truly need them.
+# This converges to a low-/zero-overlap solution *independently of net order*.
+# --------------------------------------------------------------------------
+@dataclass
+class NegotiatedSolution:
+    routes: dict[str, NetRoute] = field(default_factory=dict)
+    total_wirelength: int = 0
+    total_bends: int = 0
+    failed: list[str] = field(default_factory=list)
+    iterations: int = 0
+    converged: bool = False
+    overused: list[Cell] = field(default_factory=list)  # cells still shared
+
+    @property
+    def all_routed(self) -> bool:
+        return not self.failed
+
+
+def _route_net_costed(grid: Grid, pins: list[Cell], hard_blocked: set[Cell],
+                      cell_cost) -> NetRoute:
+    """Like route_net but other nets are *priced* (cell_cost), not walls.
+
+    Only hard_blocked (devices / macros / power straps) is impassable.
+    """
+    nr = NetRoute(net="")
+    if not pins:
+        return nr
+    tree: set[Cell] = {pins[0]}
+    nr.cells = {pins[0]}
+    remaining = list(pins[1:])
+    while remaining:
+        remaining.sort(key=lambda p: _manhattan_to_nearest(p, tree))
+        pin = remaining.pop(0)
+        eff_blocked = hard_blocked - tree
+        path = astar(grid, set(tree), {pin}, eff_blocked, cell_cost=cell_cost)
+        if path is None:
+            nr.routed = False
+            return nr
+        nr.bends += _count_bends(path)
+        nr.wirelength += len(path) - 1
+        for c in path:
+            tree.add(c)
+            nr.cells.add(c)
+    return nr
+
+
+def negotiated_route(
+    grid: Grid,
+    nets: dict[str, list[Cell]],
+    max_iter: int = 30,
+    pres_fac0: float = 0.5,
+    pres_growth: float = 1.8,
+    hist_fac: float = 1.0,
+) -> NegotiatedSolution:
+    """PathFinder negotiated-congestion router (order-independent)."""
+    history: dict[Cell, float] = {}
+    routes: dict[str, NetRoute] = {}
+    pin_cells = {c for pins in nets.values() for c in pins}
+    pres_fac = pres_fac0
+    sol = NegotiatedSolution()
+
+    for it in range(1, max_iter + 1):
+        occ: dict[Cell, int] = {}              # cell -> #nets using it this round
+        routes = {}
+        # Route every net fresh against the current congestion landscape.
+        for net, pins in nets.items():
+            mine = set(pins)
+
+            def cost(cell, _mine=mine):
+                # A net pays nothing to reuse its own pins; everyone pays the
+                # shared present+history price elsewhere.
+                if cell in _mine:
+                    return 0.0
+                pres = 1.0 + pres_fac * occ.get(cell, 0)
+                return (history.get(cell, 0.0)) + (pres - 1.0)
+
+            nr = _route_net_costed(grid, pins, grid.blocked, cost)
+            nr.net = net
+            routes[net] = nr
+            if nr.routed:
+                for c in nr.cells:
+                    occ[c] = occ.get(c, 0) + 1
+
+        # Overuse = a non-pin cell claimed by more than one net.
+        overused = [c for c, n in occ.items() if n > 1 and c not in pin_cells]
+        for c in overused:
+            history[c] = history.get(c, 0.0) + hist_fac
+        pres_fac *= pres_growth
+
+        if not overused and all(r.routed for r in routes.values()):
+            sol.converged = True
+            sol.iterations = it
+            break
+        sol.iterations = it
+
+    sol.routes = routes
+    sol.failed = [n for n, r in routes.items() if not r.routed]
+    sol.total_wirelength = sum(r.wirelength for r in routes.values() if r.routed)
+    sol.total_bends = sum(r.bends for r in routes.values() if r.routed)
+    # Recompute final overuse for reporting.
+    occ_final: dict[Cell, int] = {}
+    for r in routes.values():
+        if r.routed:
+            for c in r.cells:
+                occ_final[c] = occ_final.get(c, 0) + 1
+    sol.overused = sorted(c for c, n in occ_final.items()
+                          if n > 1 and c not in pin_cells)
+    return sol
+
+
+# --------------------------------------------------------------------------
+# Differential-pair routing: matched vs independent.
+#
+# A diff pair (INP/INN, OUTP/OUTN) must reach its destination with equal length
+# and tight coupling, or it converts common-mode noise to differential error
+# and adds skew. Plain per-net A* routes each shortest *independently*: when one
+# net detours around an obstacle (or around its sibling), the two lengths differ
+# -> mismatch. Matched routing keeps the second net hugging the first (a 2-wide
+# bundle), trading a little total wire for near-zero length mismatch.
+# --------------------------------------------------------------------------
+@dataclass
+class PairRoute:
+    a: NetRoute
+    b: NetRoute
+    mismatch: int = 0          # |len_a - len_b|
+    coupled: int = 0           # b-cells adjacent to an a-cell (tight coupling)
+    matched: bool = True
+
+    @property
+    def routed(self) -> bool:
+        return self.a.routed and self.b.routed
+
+
+def _halo(cells: set[Cell]) -> set[Cell]:
+    h: set[Cell] = set()
+    for (x, y) in cells:
+        for dx, dy in _DIRS:
+            h.add((x + dx, y + dy))
+    return h - cells
+
+
+def route_diff_pair(grid: Grid, pins_a: list[Cell], pins_b: list[Cell],
+                    blocked: set[Cell], matched: bool = True,
+                    away_penalty: float = 6.0) -> PairRoute:
+    """Route a differential pair. matched=True makes B hug A (parallel bundle)."""
+    a = route_net(grid, pins_a, blocked)
+    a.net = "A"
+    if not a.routed:
+        return PairRoute(a=a, b=NetRoute(net="B", routed=False), matched=matched)
+
+    if matched:
+        halo = _halo(a.cells)
+        mine_b = set(pins_b)
+
+        def cost(cell):
+            # Stay one track off A: cheap inside A's halo, pricey elsewhere.
+            if cell in mine_b or cell in halo:
+                return 0.0
+            return away_penalty
+
+        b = _route_net_costed(grid, pins_b, blocked | a.cells, cost)
+    else:
+        # Independent: A is just an obstacle; B finds its own shortest path.
+        b = route_net(grid, pins_b, blocked | a.cells)
+    b.net = "B"
+
+    return PairRoute(
+        a=a, b=b, matched=matched,
+        mismatch=abs(a.wirelength - b.wirelength) if b.routed else 0,
+        coupled=len(_halo(b.cells) & a.cells) if b.routed else 0,
+    )
