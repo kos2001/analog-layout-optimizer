@@ -422,6 +422,19 @@ def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False) -> dic
     return run_end_to_end(place=place, seed=seed, sky130=sky130)
 
 
+@app.get("/api/flow/gds")
+def get_flow_gds(place: str = "sa", seed: int = 0) -> dict:
+    """Export the placed+routed OTA to GDSII (base64) + layer stats."""
+    import base64
+    from layout_opt.gds import flow_to_gds_bytes
+    place = place if place in ("sa", "random") else "sa"
+    f = _flow.run_flow(place=place, seed=seed)
+    data, stats = flow_to_gds_bytes(f)
+    return {"filename": f"ota_{place}_{seed}.gds",
+            "gdsBase64": base64.b64encode(data).decode("ascii"),
+            "bytes": len(data), "stats": stats}
+
+
 @app.get("/api/pvt")
 def get_pvt(seed: int = 0, full: bool = False) -> dict:
     """PVT corner sweep on real SKY130 silicon (slow: ~15-18 s per corner)."""

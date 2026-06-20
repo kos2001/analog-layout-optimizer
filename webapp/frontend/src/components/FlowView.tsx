@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchFlow } from "../api";
 import { useT } from "../i18n";
 import type { FlowData } from "../types";
+import { fetchGds } from "../api";
 import RouteGrid, { netColorFactory } from "./RouteGrid";
 
 function SignoffPanel({ data }: { data: FlowData }) {
@@ -95,11 +96,26 @@ export default function FlowView() {
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [showDrc, setShowDrc] = useState(true);
+  const [gdsNote, setGdsNote] = useState<string | null>(null);
 
   useEffect(() => {
     setBusy(true); setErr(null);
     fetchFlow(place, seed).then(setData).catch((e) => setErr(String(e))).finally(() => setBusy(false));
   }, [place, seed]);
+
+  const exportGds = async () => {
+    setGdsNote("exporting…");
+    try {
+      const g = await fetchGds(place, seed);
+      const bytes = Uint8Array.from(atob(g.gdsBase64), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = g.filename; a.click();
+      URL.revokeObjectURL(url);
+      const s = g.stats;
+      setGdsNote(`${g.filename}: ${s.polygons} polygons · ${s.counts.metal} metal / ${s.counts.via} vias / ${s.counts.device} devices · ${s.area_um2} µm² · ${(g.bytes / 1024).toFixed(1)} KB · layers ${s.layers.map((l) => `${l.layer}/${l.datatype}`).join(", ")}`);
+    } catch (e) { setGdsNote(String(e)); }
+  };
 
   if (err) return <div className="fatal">Error: {err}</div>;
 
@@ -120,7 +136,9 @@ export default function FlowView() {
           <button className={place === "random" ? "" : "secondary"} onClick={() => setPlace("random")}>{t("flow.random")}</button>
           <button className="secondary" onClick={() => setSeed(Math.floor(Math.random() * 1e6))}>{t("flow.rerun")}</button>
           <button className={showDrc ? "" : "secondary"} onClick={() => setShowDrc((s) => !s)}>{t("flow.drc.toggle")}</button>
+          <button className="secondary" onClick={exportGds} disabled={busy}>{t("flow.gds")}</button>
         </div>
+        {gdsNote && <p className="note" style={{ marginTop: 0 }}>{gdsNote}</p>}
 
         {data && <SignoffPanel data={data} />}
         {data && <PostLayoutPanel data={data} />}

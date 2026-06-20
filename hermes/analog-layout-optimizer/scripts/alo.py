@@ -21,6 +21,7 @@ Usage:
   python alo.py scenario     <case>          # routing-algo comparison (bus/macro/diff)
   python alo.py ngspice-eval [--model sky130] # verify OTA on real SKY130 silicon
   python alo.py pvt          [--full]        # SKY130 PVT corner analysis (worst-case)
+  python alo.py gds          [--out F.gds]   # export placed+routed OTA to GDSII
 """
 
 from __future__ import annotations
@@ -360,6 +361,15 @@ def _pvt(args):
     return {"op": "pvt", **r}
 
 
+def _gds(args):
+    """Export the placed+routed OTA to a real GDSII file (SKY130 layers)."""
+    from layout_opt.placement import run_flow
+    from layout_opt.gds import flow_to_gds
+    f = run_flow(place=args.place, seed=args.seed)
+    stats = flow_to_gds(f, args.out)
+    return {"op": "gds", **stats}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Analog Layout Optimizer JSON CLI")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -408,6 +418,11 @@ def main() -> int:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--full", action="store_true", help="all 27 P/V/T corners (default: 3 essential)")
     p.set_defaults(fn=_pvt)
+    p = sub.add_parser("gds", help="export placed+routed OTA to GDSII (SKY130 layers)")
+    p.add_argument("--place", choices=["sa", "random"], default="sa")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--out", default="ota.gds", help="output GDS path")
+    p.set_defaults(fn=_gds)
     args = ap.parse_args()
     print(json.dumps(args.fn(args), indent=2))
     return 0
