@@ -370,5 +370,6 @@ export interface ProcessEffects {
 export interface SimSpecs { gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number; }
 export interface NgspiceEval {
   backend: string; model: string; available: boolean;
+  modelKind?: string; sky130Available?: boolean;
   analytic: SimSpecs; sim?: SimSpecs; status: string; error?: string;
 }

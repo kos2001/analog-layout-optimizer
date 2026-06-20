@@ -32,6 +32,7 @@ export default function OpAmpView() {
   const [se, setSe] = useState<SpectreEval | null>(null);
   const [ng, setNg] = useState<NgspiceEval | null>(null);
   const [backend, setBackend] = useState<"spectre" | "ngspice">("ngspice");
+  const [ngModel, setNgModel] = useState<"generic" | "sky130">("generic");
   const [bode, setBode] = useState<BodeData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -150,7 +151,9 @@ export default function OpAmpView() {
           Closed-loop verify — commercial vs open-source backend
           {backend === "ngspice" && ng && (
             <span className={ng.available ? "badge ok" : "badge bad"}>
-              {ng.available ? "ngspice ready" : "ngspice not installed"}
+              {ng.modelKind === "sky130"
+                ? (ng.sky130Available ? "SKY130 silicon" : "SKY130 PDK missing")
+                : (ng.available ? "ngspice ready" : "ngspice not installed")}
             </span>
           )}
           {backend === "spectre" && pf && (
@@ -167,9 +170,19 @@ export default function OpAmpView() {
             Spectre (Cadence)
           </button>
         </div>
+        {backend === "ngspice" && (
+          <div className="seg" style={{ marginBottom: 10 }}>
+            <button className={ngModel === "generic" ? "" : "secondary"} onClick={() => setNgModel("generic")}>
+              generic level-1
+            </button>
+            <button className={ngModel === "sky130" ? "" : "secondary"} onClick={() => setNgModel("sky130")}>
+              SKY130 (real PDK)
+            </button>
+          </div>
+        )}
         <button
           onClick={backend === "ngspice"
-            ? run("v", async () => setNg(await fetchNgspiceEval()))
+            ? run("v", async () => setNg(await fetchNgspiceEval(ngModel)))
             : run("v", async () => setSe(await fetchSpectreEval()))}
           disabled={busy !== null}>
           {busy === "v" ? "Verifying…" : t("opamp.verify")}
@@ -191,8 +204,9 @@ export default function OpAmpView() {
               </tbody>
             </table>
             <p className="note">
-              Real open-source AC sweep (ngspice level-1). GBW & PM track the model;
-              gain differs with model detail — swap to a SKY130 .lib for accuracy.
+              {ng.modelKind === "sky130"
+                ? "Real SkyWater SKY130 BSIM devices (sky130_fd_pr__nfet/pfet_01v8, tt corner) via the open PDK — silicon-grade numbers. They differ from the analytic square-law model: that gap is exactly why post-layout sim matters."
+                : "Real open-source AC sweep (ngspice level-1). GBW & PM track the analytic model; switch to SKY130 (real PDK) above for silicon-grade device physics."}
             </p>
           </div>
         )}
