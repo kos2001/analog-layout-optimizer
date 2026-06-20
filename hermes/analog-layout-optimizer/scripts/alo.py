@@ -15,6 +15,11 @@ Usage:
   python alo.py joint        [--seed N]      # device+routing co-optimization
   python alo.py maze                         # comparator maze routing
   python alo.py tcoil        [--peak DB]     # T-coil bandwidth extension
+  python alo.py full-flow    [--sky130]      # one-click sizing->P&R->sign-off->post-layout
+  python alo.py signoff      [--place sa]    # place+route + DRC/LVS sign-off verdict
+  python alo.py ppa          [--pop N]       # NSGA-II power/perf/area Pareto front
+  python alo.py scenario     <case>          # routing-algo comparison (bus/macro/diff)
+  python alo.py ngspice-eval [--model sky130] # verify OTA on real SKY130 silicon
 """
 
 from __future__ import annotations
@@ -271,26 +276,78 @@ def _tcoil(args):
 
 
 def _ngspice_eval(args):
-    """Verify a candidate OTA with REAL ngspice (open-source closed loop)."""
+    """Verify a candidate OTA with REAL ngspice (generic level-1 or SKY130 PDK)."""
     from layout_opt.opamp_opt import de_log_refine
     from layout_opt.opamp import evaluate_opamp
     from layout_opt.ngspice_backend import (
         GENERIC_NGSPICE, NgspiceUnavailable, ngspice_available, ngspice_evaluate,
+        sky130_model, sky130_available,
     )
+    use_sky = getattr(args, "model", "generic") == "sky130"
+    dev = sky130_model() if use_sky else GENERIC_NGSPICE
     cand = de_log_refine(seed=args.seed).params
     a = evaluate_opamp(cand)
-    out = {"op": "ngspice_eval", "model": GENERIC_NGSPICE.name,
-           "available": ngspice_available(),
+    out = {"op": "ngspice_eval", "model": dev.name,
+           "available": ngspice_available(), "sky130_available": sky130_available(),
            "analytic": {"gain_db": round(a.gain_db, 2), "gbw_mhz": round(a.gbw_hz / 1e6, 2),
                         "pm_deg": round(a.pm_deg, 2), "power_mw": round(a.power * 1e3, 4)}}
+    if use_sky and not sky130_available():
+        out["status"] = "sky130_unavailable"
+        out["error"] = "SKY130 PDK not found; set PDK_ROOT (volare enable)."
+        return out
     try:
-        s = ngspice_evaluate(cand, GENERIC_NGSPICE)
+        s = ngspice_evaluate(cand, dev)
         out["sim"] = {"gain_db": round(s.gain_db, 2), "gbw_mhz": round(s.gbw_hz / 1e6, 2),
                       "pm_deg": round(s.pm_deg, 2), "power_mw": round(s.power * 1e3, 4)}
         out["status"] = "ran_ngspice"
     except NgspiceUnavailable as e:  # noqa: BLE001
         out["status"] = "ngspice_unavailable"; out["error"] = str(e)
     return out
+
+
+def _full_flow(args):
+    """One-click end-to-end: sizing -> P&R -> sign-off -> post-layout -> [silicon]."""
+    from layout_opt.flow_e2e import run_end_to_end
+    r = run_end_to_end(place=args.place, seed=args.seed, sky130=args.sky130)
+    return {"op": "full_flow", "verdict": r["verdict"],
+            "stages": [{"name": s["name"], "status": s["status"], "detail": s["detail"]}
+                       for s in r["stages"]],
+            "sizing": r["sizing"], "silicon": r["silicon"]}
+
+
+def _ppa(args):
+    """PPA multi-objective Pareto front (NSGA-II): power / area / GBW."""
+    from layout_opt.ppa import run_ppa
+    r = run_ppa(pop_size=args.pop, generations=args.gens, seed=args.seed)
+    return {"op": "ppa", "nParetoFront": r["nParetoFront"], "ranges": r["ranges"],
+            "chosen": r["chosen"]}
+
+
+def _scenario(args):
+    """Realistic routing case: fixed vs best-order vs PathFinder (multinet) or diff-pair."""
+    from layout_opt.scenarios import run_case, CASES
+    keys = [c["key"] for c in CASES]
+    if args.key not in keys:
+        return {"op": "scenario", "error": f"unknown '{args.key}'", "cases": keys}
+    r = run_case(args.key)
+    if r["kind"] == "multinet":
+        return {"op": "scenario", "key": args.key, "nets": len(r["netNames"]),
+                "algos": {a: {"wirelength": p["totalWirelength"], "vias": p.get("totalVias"),
+                              "failed": len(p["failed"]), "drcTotal": p["drc"]["total"]}
+                          for a, p in r["algos"].items()}}
+    return {"op": "scenario", "key": args.key,
+            "variants": {k: {"coupled": v["coupled"], "mismatch": v["mismatch"],
+                             "routed": v["routed"]} for k, v in r["variants"].items()}}
+
+
+def _signoff(args):
+    """Place+route the OTA and run physical sign-off (DRC + LVS + connectivity)."""
+    from layout_opt.placement import run_flow
+    f = run_flow(place=args.place, seed=args.seed)
+    so = f["signoff"]
+    return {"op": "signoff", "verdict": so["verdict"], "hpwl": f["hpwl"],
+            "checks": so["checks"], "drc": so["drc"]["counts"],
+            "lvs_clean": so["lvs"]["clean"]}
 
 
 def main() -> int:
@@ -319,7 +376,24 @@ def main() -> int:
     p.add_argument("--nmos", default="nch_mac"); p.add_argument("--pmos", default="pch_mac")
     p.add_argument("--l-um", type=float, default=0.18, dest="l_um")
     p.set_defaults(fn=_spectre_eval)
-    p = sub.add_parser("ngspice-eval"); p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_ngspice_eval)
+    p = sub.add_parser("ngspice-eval"); p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--model", choices=["generic", "sky130"], default="generic",
+                   help="device model: generic level-1 or real SKY130 PDK")
+    p.set_defaults(fn=_ngspice_eval)
+    p = sub.add_parser("full-flow", help="one-click sizing->P&R->sign-off->post-layout->[silicon]")
+    p.add_argument("--place", choices=["sa", "random"], default="sa")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--sky130", action="store_true", help="add a real SKY130 silicon verify")
+    p.set_defaults(fn=_full_flow)
+    p = sub.add_parser("ppa", help="NSGA-II power/performance/area Pareto front")
+    p.add_argument("--pop", type=int, default=80); p.add_argument("--gens", type=int, default=40)
+    p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_ppa)
+    p = sub.add_parser("scenario", help="routing-algorithm comparison on a real-work case")
+    p.add_argument("key", choices=["bus_channel", "macro_power_grid", "diff_pair"])
+    p.set_defaults(fn=_scenario)
+    p = sub.add_parser("signoff", help="place+route the OTA and run DRC+LVS sign-off")
+    p.add_argument("--place", choices=["sa", "random"], default="sa")
+    p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_signoff)
     args = ap.parse_args()
     print(json.dumps(args.fn(args), indent=2))
     return 0
