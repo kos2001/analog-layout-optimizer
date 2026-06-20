@@ -16,7 +16,38 @@ const S: Record<string, { en: string; ko: string }> = {
   "tab.surrogate": { en: "Surrogate", ko: "Surrogate" },
   "tab.bridge": { en: "Bridge / SKILL", ko: "Bridge / SKILL" },
   "tab.agent": { en: "Agent", ko: "Agent" },
+  "tab.complex": { en: "Complex cases", ko: "복잡 사례" },
   "loading": { en: "Loading…", ko: "불러오는 중…" },
+
+  // complex cases — routing scenarios + common-centroid
+  "cx.routing.title": { en: "Real-work routing cases — algorithm comparison", ko: "실무 라우팅 사례 — 알고리즘 비교" },
+  "cx.diffpair": { en: "diff pair", ko: "차동쌍" },
+  "cx.case.bus_channel": { en: "Bus / channel", ko: "버스/채널" },
+  "cx.case.macro_power_grid": { en: "Macros + power grid", ko: "매크로+전원그리드" },
+  "cx.case.diff_pair": { en: "Differential pair", ko: "차동쌍" },
+  "cx.algo.fixed": { en: "Fixed-order A*", ko: "고정순서 A*" },
+  "cx.algo.best": { en: "Best-order A*", ko: "최적순서 A*" },
+  "cx.algo.negotiated": { en: "Negotiated (PathFinder)", ko: "협상(PathFinder)" },
+  "cx.failed": { en: "unrouted nets", ko: "미배선 넷" },
+  "cx.time": { en: "solve time", ko: "풀이 시간" },
+  "cx.matched": { en: "Matched (bundle)", ko: "매칭(번들)" },
+  "cx.independent": { en: "Independent", ko: "독립 라우팅" },
+  "cx.coupled": { en: "coupling (adjacent)", ko: "커플링(인접)" },
+  "cx.mismatch": { en: "length mismatch", ko: "길이 불일치" },
+  "cx.legend.layer": { en: "bright=M-even (H), dim=M-odd (V)", ko: "밝은=짝수층(H), 흐린=홀수층(V)" },
+  "cx.legend.via": { en: "white dot = via", ko: "흰 점 = via" },
+  "cx.algo.note": {
+    en: "A* is optimal per single net, but routing nets sequentially makes the result depend on net order (NP-hard). Fixed/best-order A* can strand nets or burn vias; PathFinder negotiated congestion shares tracks and reroutes all — order-independent.",
+    ko: "A*는 단일 넷 최단경로엔 최적이지만, 넷을 순차 라우팅하면 결과가 넷 순서에 의존(NP-hard)합니다. 고정/최적순서 A*는 넷을 못 깔거나 via를 낭비할 수 있고, PathFinder 협상 라우팅은 트랙을 공유하며 전부 다시 깝니다 — 순서 무관." },
+  "cx.cc.title": { en: "Common-centroid matched array (layout)", ko: "공통중심 매칭 배열 (레이아웃)" },
+  "cx.cc.simple": { en: "Simple (segregated)", ko: "단순(분리)" },
+  "cx.cc.interdigitated": { en: "Interdigitated", ko: "인터디지테이션" },
+  "cx.cc.common_centroid": { en: "Common-centroid", ko: "공통중심" },
+  "cx.cc.offset": { en: "centroid offset", ko: "중심 거리" },
+  "cx.cc.gradmm": { en: "gradient mismatch", ko: "그래디언트 불일치" },
+  "cx.cc.note": {
+    en: "A/B unit cells of a matched pair. A linear process gradient (oxide, implant, stress) adds equally to A and B only when their centroids coincide — common-centroid drives both centroid offset and gradient mismatch to zero; the dashed yellow ring (B centroid) sits on the white ring (A centroid).",
+    ko: "매칭쌍의 A/B 단위셀. 선형 공정 그래디언트(산화막·임플란트·스트레스)는 두 소자의 중심이 일치할 때만 A·B에 동일하게 더해집니다 — 공통중심은 중심거리와 그래디언트 불일치를 0으로 만듭니다(노란 점선=B중심이 흰 원=A중심에 겹침)." },
 
   // common
   "drc.clean": { en: "DRC clean", ko: "DRC 정상" },
