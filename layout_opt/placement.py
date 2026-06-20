@@ -157,8 +157,12 @@ def route_placement(comps: list[Component]) -> dict:
     }
 
 
-def run_flow(place: str = "sa", seed: int = 0) -> dict:
-    """Schematic -> placement -> routing -> sign-off, end to end."""
+def run_flow(place: str = "sa", seed: int = 0, sizing=None) -> dict:
+    """Schematic -> placement -> routing -> sign-off, end to end.
+
+    `sizing` (OpAmpParams) is used for the post-layout re-sim; defaults to the
+    representative DEMO_SIZING when not supplied by an upstream sizing stage.
+    """
     sch = two_stage_ota()
     pos = sa_place(sch, seed) if place == "sa" else random_place(sch, seed)
     comps = sch.to_components(pos)
@@ -181,5 +185,7 @@ def run_flow(place: str = "sa", seed: int = 0) -> dict:
                        for c in comps],
         "routing": routing,
         "signoff": signoff,
-        "postlayout": _par.post_layout_from_routing(routing),
+        "postlayout": _par.post_layout_from_routing(
+            routing, p=sizing) if sizing is not None
+        else _par.post_layout_from_routing(routing),
     }

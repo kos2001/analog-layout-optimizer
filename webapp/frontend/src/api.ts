@@ -169,3 +169,9 @@ import type { FlowData } from "./types";
 
 export const fetchFlow = (place: "sa" | "random", seed = 0) =>
   fetch(`/api/flow?place=${place}&seed=${seed}`).then((r) => r.json() as Promise<FlowData>);
+
+import type { FullFlowData } from "./types";
+
+export const fetchFullFlow = (place: "sa" | "random", seed = 0, sky130 = false) =>
+  fetch(`/api/full-flow?place=${place}&seed=${seed}&sky130=${sky130}`)
+    .then((r) => r.json() as Promise<FullFlowData>);
