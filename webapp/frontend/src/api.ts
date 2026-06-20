@@ -130,8 +130,8 @@ export async function processEffects(nl: string, tech: Record<string, number>): 
 
 import type { NgspiceEval } from "./types";
 
-export const fetchNgspiceEval = () =>
-  fetch("/api/opamp/ngspice-eval").then((r) => r.json() as Promise<NgspiceEval>);
+export const fetchNgspiceEval = (model: "generic" | "sky130" = "generic") =>
+  fetch(`/api/opamp/ngspice-eval?model=${model}`).then((r) => r.json() as Promise<NgspiceEval>);
 
 import type { FloorplanComponent, FloorplanData } from "./types";
 
