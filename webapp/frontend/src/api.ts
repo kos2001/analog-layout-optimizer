@@ -158,3 +158,9 @@ export const fetchScenario = (key: string) =>
   fetch(`/api/scenarios/${key}`).then((r) => r.json() as Promise<ScenarioData>);
 export const fetchCommonCentroid = (rows = 4, cols = 4) =>
   fetch(`/api/common-centroid?rows=${rows}&cols=${cols}`).then((r) => r.json() as Promise<CCCompare>);
+
+import type { PPAData } from "./types";
+
+export const fetchPPA = (wPower: number, wArea: number, wPerf: number, seed = 0) =>
+  fetch(`/api/ppa?w_power=${wPower}&w_area=${wArea}&w_perf=${wPerf}&seed=${seed}`)
+    .then((r) => r.json() as Promise<PPAData>);

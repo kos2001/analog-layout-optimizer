@@ -39,6 +39,7 @@ from layout_opt.interactive import (
 )
 from layout_opt import scenarios as _scn
 from layout_opt import common_centroid as _cc
+from layout_opt import ppa as _ppa
 from layout_opt.tcoil import (
     TCoilParams,
     bandwidth,
@@ -394,6 +395,15 @@ def get_scenario(key: str) -> dict:
 def get_common_centroid(rows: int = 4, cols: int = 4) -> dict:
     rows = max(2, min(rows, 8)); cols = max(2, min(cols, 8))
     return _cc.compare(rows, cols)
+
+
+@app.get("/api/ppa")
+def get_ppa(w_power: float = 1.0, w_area: float = 1.0, w_perf: float = 1.0,
+            pop: int = 80, gens: int = 40, seed: int = 0) -> dict:
+    """OTA PPA Pareto front (NSGA-II) + the design matching a P/P/A preference."""
+    pop = max(20, min(pop, 160)); gens = max(5, min(gens, 80))
+    return _ppa.run_ppa(pop_size=pop, generations=gens, seed=seed,
+                        weights=(w_power, w_area, w_perf))
 
 
 # --------------------------------------------------------------------------
