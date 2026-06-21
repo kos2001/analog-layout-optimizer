@@ -422,6 +422,13 @@ def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False) -> dic
     return run_end_to_end(place=place, seed=seed, sky130=sky130)
 
 
+@app.get("/api/layout/shapes")
+def get_layout_shapes(which: str = "ota") -> dict:
+    """Per-SKY130-layer polygons of a transistor layout, for the in-browser viewer."""
+    from layout_opt.layout_view import layout_shapes
+    return layout_shapes(which if which in ("ota", "mirror") else "ota")
+
+
 @app.get("/api/flow/gds")
 def get_flow_gds(place: str = "sa", seed: int = 0) -> dict:
     """Export the placed+routed OTA to GDSII (base64) + layer stats."""

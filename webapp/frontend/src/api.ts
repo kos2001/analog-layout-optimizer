@@ -194,3 +194,8 @@ export const fetchKlayoutDrc = (place: "sa" | "random", seed = 0) =>
 import type { LvsResult } from "./types";
 
 export const fetchLvs = () => fetch("/api/lvs").then((r) => r.json() as Promise<LvsResult>);
+
+import type { LayoutShapes } from "./types";
+
+export const fetchLayoutShapes = (which: "ota" | "mirror" = "ota") =>
+  fetch(`/api/layout/shapes?which=${which}`).then((r) => r.json() as Promise<LayoutShapes>);
