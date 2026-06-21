@@ -44,6 +44,22 @@ def test_full_ota_lvs_matches_schematic():
     assert r["devices"]["counts"] == {"nmos": 4, "pmos": 3}
 
 
+def test_ota_per_device_sizing_is_distinct():
+    r = lvs_ota()
+    w = r["perDeviceW"]
+    assert w["M6"] > w["M1"] and w["M7"] > w["M3"]   # real per-device sizing, not uniform
+    assert w["M5"] >= 0.42                           # min-width clamp respected
+
+
+def test_ota_layout_is_drc_clean():
+    from layout_opt.ota_layout import build_ota
+    from layout_opt.klayout_drc import run_drc
+    ly, top, _s, _c = build_ota(with_cap=False)
+    ly.write("/tmp/_ota_drc.gds")
+    r = run_drc("/tmp/_ota_drc.gds")
+    assert r["clean"] is True                        # met1/met2/met3 width+space clean
+
+
 def test_full_ota_gds_export(tmp_path):
     import gdstk
     out = str(tmp_path / "ota_tr.gds")

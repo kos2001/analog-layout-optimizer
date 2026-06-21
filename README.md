@@ -143,13 +143,16 @@ Magic + Netgen aren't installable on this host (no conda/brew formula; building
 from source is out of scope), so KLayout's LVS engine — the same one the SKY130
 KLayout LVS deck uses, and pip-installable — is the equivalent real-tool path.
 
-**Full OTA, transistor level** (`ota_layout.py`): all seven MOSFETs are placed
-in a row and routed in real metal (met1 vertical drops + met2 per-net buses +
-vias), then extracted and LVS-compared to the OTA schematic — **LVS clean**
-(4 nmos + 3 pmos, every net matched). `alo.py lvs --cell ota`, `/api/lvs?cell=ota`,
-or the **Transistor LVS (KLayout)** button. The transistor-level GDS exports too.
-(Cc is omitted from the MOS LVS — it's a capacitor device; the seven transistors
-define every net on their own.)
+**Full OTA, transistor level** (`ota_layout.py`): all seven MOSFETs are laid out
+with **per-device real sizing** — each W comes from the OTA sizing (W/L × L,
+min-clamped), drawn **multi-finger** so wide devices (M6 ≈ 15 µm → 6 fingers)
+stay compact (KLayout merges the fingers back to the full W). Routing is
+**three-layer** (met1 terminals, met2 risers, met3 per-net buses + vias); the
+result is **met1/met2/met3 DRC-clean** (width + spacing) *and* **LVS-clean** —
+4 nmos + 3 pmos, every net matched, each device's W verified. `alo.py lvs
+--cell ota`, `/api/lvs?cell=ota`, or the **Transistor LVS (KLayout)** button;
+the transistor-level GDS exports too. (Cc's value is reported; a real MIM-cap
+device is a follow-up — the seven transistors define every net on their own.)
 
 ### Real SKY130 silicon (`ngspice_backend.py`)
 
