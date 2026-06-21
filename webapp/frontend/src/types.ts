@@ -294,6 +294,15 @@ export interface LvsResult {
   layout_netlist: string;
 }
 
+export interface LayoutLayer {
+  layer: number; datatype: number; name: string; color: string;
+  polys: number[][][]; labels: { text: string; x: number; y: number }[];
+}
+export interface LayoutShapes {
+  which: string; topCell: string; dbu: number; bbox: number[];
+  layers: LayoutLayer[]; nPolygons: number;
+}
+
 export interface FlowStage { name: string; status: string; detail: string; }
 export interface FlowSizing {
   feasible: boolean; gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number;

@@ -20,7 +20,16 @@ const S: Record<string, { en: string; ko: string }> = {
   "tab.ppa": { en: "PPA", ko: "PPA" },
   "tab.flow": { en: "Schematic → P&R", ko: "Schematic → P&R" },
   "tab.fullflow": { en: "Full flow", ko: "전체 플로우" },
+  "tab.layoutview": { en: "Layout view", ko: "레이아웃 뷰" },
   "loading": { en: "Loading…", ko: "불러오는 중…" },
+
+  // layout viewer
+  "lay.title": { en: "Layout viewer — real SKY130 transistor geometry", ko: "레이아웃 뷰어 — 실제 SKY130 트랜지스터 지오메트리" },
+  "lay.ota": { en: "OTA (7 devices)", ko: "OTA (7 소자)" },
+  "lay.mirror": { en: "Current mirror", ko: "전류 미러" },
+  "lay.note": {
+    en: "The actual transistor-level GDS rendered in the browser — diffusion / poly / contacts / li1 / met1-2-3 on SKY130 layers, with net labels. Toggle layers in the legend. This is the same geometry KLayout DRCs and LVSes.",
+    ko: "실제 트랜지스터-레벨 GDS를 브라우저에서 렌더 — SKY130 레이어의 diffusion/poly/contact/li1/met1-2-3 + 넷 라벨. 범례에서 레이어 토글. KLayout이 DRC·LVS하는 바로 그 지오메트리입니다." },
 
   // end-to-end one-click flow
   "ff.title": { en: "End-to-end flow — one click", ko: "End-to-end 플로우 — 원클릭" },
