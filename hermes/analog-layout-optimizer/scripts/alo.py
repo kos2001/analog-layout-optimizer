@@ -382,9 +382,14 @@ def _klayout_drc(args):
 
 
 def _lvs(args):
-    """Transistor-level layout synthesis + REAL KLayout LVS (full OTA or mirror)."""
-    from layout_opt.klayout_lvs import lvs_current_mirror, lvs_ota
-    r = lvs_ota() if args.cell == "ota" else lvs_current_mirror()
+    """Transistor-level layout synthesis + REAL KLayout LVS (OTA / mirror / diff pair)."""
+    from layout_opt.klayout_lvs import lvs_current_mirror, lvs_ota, lvs_diffpair
+    if args.cell == "mirror":
+        r = lvs_current_mirror()
+    elif args.cell == "diffpair":
+        r = lvs_diffpair()
+    else:
+        r = lvs_ota()
     return {"op": "lvs", **r}
 
 
@@ -446,8 +451,8 @@ def main() -> int:
     p = sub.add_parser("klayout-drc", help="real KLayout DRC (met1/met2) on the exported GDS")
     p.add_argument("--place", choices=["sa", "random"], default="sa")
     p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_klayout_drc)
-    p = sub.add_parser("lvs", help="transistor-level layout + real KLayout LVS (full OTA / mirror)")
-    p.add_argument("--cell", choices=["ota", "mirror"], default="ota")
+    p = sub.add_parser("lvs", help="transistor-level layout + real KLayout LVS (OTA / mirror / diffpair)")
+    p.add_argument("--cell", choices=["ota", "mirror", "diffpair"], default="ota")
     p.set_defaults(fn=_lvs)
     args = ap.parse_args()
     print(json.dumps(args.fn(args), indent=2))

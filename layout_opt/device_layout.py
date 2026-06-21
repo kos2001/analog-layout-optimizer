@@ -68,8 +68,9 @@ def add_device(cell: db.Cell, li: dict, x: float, y: float, w: float, l: float,
         terms[name] = (mx0, ay0, mx1, ay1)
 
     # Gate contact: poly tab above active -> licon -> li1 -> mcon -> met1.
-    # Keep the gate met1 narrow so a neighbouring S/D drop can't graze it.
-    ty0, ty1 = ay1 + POLY_EXT, ay1 + POLY_EXT + GATE_TAB
+    # Keep the gate met1 narrow so a neighbouring S/D drop can't graze it, and
+    # lift it clear of the S/D met1 below (>= met1 min space, 0.14um).
+    ty0, ty1 = ay1 + POLY_EXT + 0.04, ay1 + POLY_EXT + 0.04 + GATE_TAB
     box("poly", gx0 - 0.04, ay1 + POLY_EXT - 0.01, gx1 + 0.04, ty1)
     gcx = (gx0 + gx1) / 2
     gcy = (ty0 + ty1) / 2

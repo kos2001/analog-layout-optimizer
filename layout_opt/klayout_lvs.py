@@ -159,3 +159,24 @@ def lvs_ota(gds_out: str | None = None, with_cap: bool = True) -> dict:
             "perDeviceW": {d["name"]: d["W"] for d in schem_devs},
             "devices": device_summary(layout_nl),
             "layout_netlist": layout_nl.to_s()}
+
+
+def lvs_diffpair(wf: float = 1.0, l: float = 0.15, guard: bool = True) -> dict:
+    """Common-centroid input pair: extract the ABBA finger array, LVS vs M1/M2.
+
+    The interdigitated fingers re-combine into two matched transistors
+    (W = nf x wf); the gradient-cancellation metric confirms a shared centroid.
+    """
+    from .diffpair_cc import build_cc_diffpair, PORTS
+    ly, top, schem_devs, metrics = build_cc_diffpair(wf=wf, l=l, guard=guard)
+    layout_nl, _l2n = extract_netlist(ly, top)
+    schem = schematic_mos_netlist(schem_devs, ports=PORTS, name="DIFFPAIR_CC")
+    match = compare(layout_nl, schem)
+    return {"tool": "KLayout LVS (MOS3 + NetlistComparer)",
+            "cell": "DIFFPAIR_CC", "match": match,
+            "note": f"{metrics['fingers_per_device']*2} fingers (ABBA common-centroid) "
+                    f"-> 2 matched nmos; guard ring {'on' if guard else 'off'}",
+            "matching": metrics,
+            "perDeviceW": {d["name"]: d["W"] for d in schem_devs},
+            "devices": device_summary(layout_nl),
+            "layout_netlist": layout_nl.to_s()}
