@@ -300,6 +300,24 @@ export interface LvsResult {
   layout_netlist: string;
 }
 
+export interface AntennaResult {
+  tool: string; cell: string; ratio_limit: number; clean: boolean;
+  worst_ratio: number; violations: number;
+  nets: { net: string; gate_um2: number; max_ratio: number; violation: boolean;
+          layers: { upto: string; metal_um2: number; ratio: number }[] }[];
+}
+export interface EmResult {
+  tool: string; clean: boolean; worst_density_pct: number; violations: number;
+  jmax_per_um_mA: Record<string, number>;
+  nets: { net: string; current_mA: number; capacity_mA: number;
+          density_pct: number; violation: boolean }[];
+}
+export interface LdeResult {
+  pattern: string; pitch_um: number; note: string;
+  scan: { dummies: number; block_fingers: number; vth_A_mV: number;
+          vth_B_mV: number; mismatch_mV: number; reduction_x: number | null }[];
+}
+
 export interface LayoutLayer {
   layer: number; datatype: number; name: string; color: string;
   polys: number[][][]; labels: { text: string; x: number; y: number }[];

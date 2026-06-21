@@ -187,6 +187,25 @@ substrate contact, no extra device pin, so LVS still matches). The result is
 `alo.py lvs --cell diffpair`, `/api/lvs?cell=diffpair`, or the **Diff pair
 (common-centroid)** button in the Layout view.
 
+**Dummy fingers + LDE mismatch** (`diffpair_cc.py`, `lde.py`): common-centroid
+cancels the *linear* gradient but **not the STI/LOD edge effect** — in an ABBA
+block the two outer fingers belong to one device, so it carries more trench
+stress. `lde.py` models the per-device threshold shift from STI/LOD (gate-to-OD
+distance) and well-proximity (WPE), and the **dummy fingers** added at each end of
+the array (`dummies=`, tied off to TAIL, LVS-clean as one merged off device) push
+every active finger interior: the input-pair LOD mismatch drops **20.9 mV → 1.8 mV
+(1 dummy/side) → 0.6 mV (2)**. `alo.py lde`, `/api/lde`.
+
+**Antenna + EM sign-off** (`antenna.py`, `em.py`): two more foundry-style checks
+on the extracted transistor layout. **Antenna** accumulates per-gate-net metal
+area over gate-oxide area (met1→met1+met2→+met3) and flags any net over the ratio
+limit — worst on the OTA is the small high-Z node *n1* (~22, well under 400).
+**EM** takes each net's DC current from the *sizing* (VDD/VSS = I_tail + I6, tail,
+mirror branches) and the narrowest routed metal from the *layout*, and checks
+current density vs J_max — the power rails run at ~50 % on minimum-width metal.
+`alo.py antenna` / `em`, `/api/antenna` / `/api/em`, or the **Antenna + EM** button
+in the Schematic→P&R tab.
+
 ### Real SKY130 silicon (`ngspice_backend.py`)
 
 The OTA Verify can run on real **SkyWater SKY130** BSIM devices

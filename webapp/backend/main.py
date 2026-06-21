@@ -453,6 +453,29 @@ def get_lvs(cell: str = "ota") -> dict:
     return lvs_ota()
 
 
+@app.get("/api/antenna")
+def get_antenna() -> dict:
+    """Per-net antenna ratio (metal/gate area) on the transistor-level OTA layout."""
+    from layout_opt.antenna import antenna_ota
+    return antenna_ota()
+
+
+@app.get("/api/em")
+def get_em() -> dict:
+    """EM DC current-density check on the OTA (currents from sizing, widths from layout)."""
+    from layout_opt.em import em_check
+    return em_check()
+
+
+@app.get("/api/lde")
+def get_lde() -> dict:
+    """Input-pair STI/LOD mismatch vs dummy count (common-centroid array)."""
+    from layout_opt.lde import diffpair_lde
+    from layout_opt.device_layout import device_extent
+    pitch = device_extent(1.0, 0.15)[0] + 0.9
+    return diffpair_lde(["A", "B", "B", "A"], pitch, dummy_options=(0, 1, 2, 3))
+
+
 @app.get("/api/flow/drc-klayout")
 def get_flow_drc_klayout(place: str = "sa", seed: int = 0) -> dict:
     """Real DRC on the exported GDS with the KLayout engine (met1/met2 width+space)."""

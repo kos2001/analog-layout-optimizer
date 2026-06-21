@@ -191,9 +191,12 @@ import type { KlayoutDrc } from "./types";
 export const fetchKlayoutDrc = (place: "sa" | "random", seed = 0) =>
   fetch(`/api/flow/drc-klayout?place=${place}&seed=${seed}`).then((r) => r.json() as Promise<KlayoutDrc>);
 
-import type { LvsResult } from "./types";
+import type { LvsResult, AntennaResult, EmResult, LdeResult } from "./types";
 
 export const fetchLvs = () => fetch("/api/lvs").then((r) => r.json() as Promise<LvsResult>);
+export const fetchAntenna = () => fetch("/api/antenna").then((r) => r.json() as Promise<AntennaResult>);
+export const fetchEm = () => fetch("/api/em").then((r) => r.json() as Promise<EmResult>);
+export const fetchLde = () => fetch("/api/lde").then((r) => r.json() as Promise<LdeResult>);
 
 import type { LayoutShapes } from "./types";
 
