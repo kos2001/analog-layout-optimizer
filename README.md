@@ -1,4 +1,8 @@
+<img src="icon.svg" alt="Analog Layout Optimizer icon" width="96" align="left" />
+
 # Analog Layout Optimization PoC — *without* Virtuoso
+
+<br clear="left"/>
 
 A working, fully-tested proof of concept for an **analog design + layout flow**
 that runs and verifies entirely **offline** — no running Cadence Virtuoso, no
