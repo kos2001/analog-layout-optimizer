@@ -387,10 +387,31 @@ def _lvs(args):
     if args.cell == "mirror":
         r = lvs_current_mirror()
     elif args.cell == "diffpair":
-        r = lvs_diffpair()
+        r = lvs_diffpair(dummies=getattr(args, "dummies", 2))
     else:
         r = lvs_ota()
     return {"op": "lvs", **r}
+
+
+def _antenna(args):
+    """Per-net antenna ratio (metal/gate area) on the transistor-level OTA layout."""
+    from layout_opt.antenna import antenna_ota
+    return {"op": "antenna", **antenna_ota()}
+
+
+def _em(args):
+    """EM DC current-density check (currents from sizing, widths from layout)."""
+    from layout_opt.em import em_check
+    return {"op": "em", **em_check()}
+
+
+def _lde(args):
+    """Input-pair LDE (STI/LOD) mismatch vs dummy count (common-centroid array)."""
+    from layout_opt.lde import diffpair_lde
+    from layout_opt.device_layout import device_extent
+    pitch = device_extent(1.0, 0.15)[0] + 0.9
+    return {"op": "lde", **diffpair_lde(["A", "B", "B", "A"], pitch,
+                                        dummy_options=(0, 1, 2, 3))}
 
 
 def main() -> int:
@@ -453,7 +474,14 @@ def main() -> int:
     p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_klayout_drc)
     p = sub.add_parser("lvs", help="transistor-level layout + real KLayout LVS (OTA / mirror / diffpair)")
     p.add_argument("--cell", choices=["ota", "mirror", "diffpair"], default="ota")
+    p.add_argument("--dummies", type=int, default=2, help="diffpair dummy fingers per side")
     p.set_defaults(fn=_lvs)
+    p = sub.add_parser("antenna", help="per-net antenna ratio (metal/gate area) on the OTA")
+    p.set_defaults(fn=_antenna)
+    p = sub.add_parser("em", help="EM DC current-density check (currents from sizing)")
+    p.set_defaults(fn=_em)
+    p = sub.add_parser("lde", help="input-pair STI/LOD mismatch vs dummy count")
+    p.set_defaults(fn=_lde)
     args = ap.parse_args()
     print(json.dumps(args.fn(args), indent=2))
     return 0

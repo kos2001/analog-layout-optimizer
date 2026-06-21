@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchFlow } from "../api";
 import { useT } from "../i18n";
 import type { FlowData } from "../types";
-import { fetchGds, fetchKlayoutDrc, fetchLvs } from "../api";
+import { fetchGds, fetchKlayoutDrc, fetchLvs, fetchAntenna, fetchEm } from "../api";
 import RouteGrid, { netColorFactory } from "./RouteGrid";
 
 function SignoffPanel({ data }: { data: FlowData }) {
@@ -100,6 +100,7 @@ export default function FlowView() {
   const [gdsNote, setGdsNote] = useState<string | null>(null);
   const [kdrc, setKdrc] = useState<string | null>(null);
   const [lvs, setLvs] = useState<string | null>(null);
+  const [phys, setPhys] = useState<string | null>(null);
 
   useEffect(() => {
     setBusy(true); setErr(null);
@@ -139,6 +140,20 @@ export default function FlowView() {
     } catch (e) { setLvs(String(e)); }
   };
 
+  const runPhys = async () => {
+    setPhys("running antenna + EM…");
+    try {
+      const [a, e] = await Promise.all([fetchAntenna(), fetchEm()]);
+      const aw = a.nets[0];
+      setPhys(
+        `Antenna: ${a.clean ? "clean ✓" : `${a.violations} over ${a.ratio_limit}`} ` +
+        `(worst ${a.worst_ratio} on ${aw ? aw.net : "—"}, limit ${a.ratio_limit}) · ` +
+        `EM: ${e.clean ? "clean ✓" : `${e.violations} over Jₘₐₓ`} ` +
+        `(worst ${e.worst_density_pct}% on power rails)`,
+      );
+    } catch (er) { setPhys(String(er)); }
+  };
+
   if (err) return <div className="fatal">Error: {err}</div>;
 
   const names = data ? Object.keys(data.netlist) : [];
@@ -162,10 +177,12 @@ export default function FlowView() {
           <button className="secondary" onClick={exportGds} disabled={busy}>{t("flow.gds")}</button>
           <button className="secondary" onClick={realDrc} disabled={busy}>{t("flow.kdrc")}</button>
           <button className="secondary" onClick={runLvs} disabled={busy}>{t("flow.lvs")}</button>
+          <button className="secondary" onClick={runPhys} disabled={busy}>{t("flow.phys")}</button>
         </div>
         {gdsNote && <p className="note" style={{ marginTop: 0 }}>{gdsNote}</p>}
         {kdrc && <p className="note" style={{ marginTop: 0 }}>{kdrc}</p>}
         {lvs && <p className="note" style={{ marginTop: 0 }}>{lvs}</p>}
+        {phys && <p className="note" style={{ marginTop: 0 }}>{phys}</p>}
 
         {data && <SignoffPanel data={data} />}
         {data && <PostLayoutPanel data={data} />}

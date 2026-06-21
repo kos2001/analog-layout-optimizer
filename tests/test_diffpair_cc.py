@@ -11,14 +11,14 @@ from layout_opt.klayout_drc import run_drc
 
 
 def test_abba_fingers_recombine_into_two_matched_nmos():
-    r = lvs_diffpair(guard=False)
+    r = lvs_diffpair(guard=False, dummies=0)
     assert r["devices"]["counts"]["nmos"] == 2          # 4 fingers -> 2 devices
     assert r["perDeviceW"] == {"M1": 2.0, "M2": 2.0}    # each W = nf x wf
 
 
 @pytest.mark.parametrize("guard", [False, True])
 def test_diffpair_lvs_matches(guard):
-    assert lvs_diffpair(guard=guard)["match"] is True
+    assert lvs_diffpair(guard=guard, dummies=0)["match"] is True
 
 
 def test_common_centroid_cancels_linear_gradient():
@@ -34,6 +34,37 @@ def test_common_centroid_cancels_linear_gradient():
 @pytest.mark.parametrize("guard", [False, True])
 def test_diffpair_layout_is_drc_clean(guard):
     ly, _top, _, _ = build_cc_diffpair(guard=guard)
+    fd, path = tempfile.mkstemp(suffix=".gds")
+    os.close(fd)
+    try:
+        ly.write(path)
+        r = run_drc(path)
+    finally:
+        os.unlink(path)
+    assert r["clean"] is True, r
+
+
+@pytest.mark.parametrize("dummies", [1, 2])
+def test_dummies_keep_lvs_clean(dummies):
+    r = lvs_diffpair(guard=True, dummies=dummies)
+    assert r["match"] is True
+    # active pair + one combined (parallel-merged) dummy device
+    assert r["devices"]["counts"]["nmos"] == 3
+
+
+def test_dummies_reduce_lod_mismatch_in_build():
+    _, _, _, m0 = build_cc_diffpair(dummies=0)
+    _, _, _, m2 = build_cc_diffpair(dummies=2)
+    assert m0["lod_mismatch_mV"] > m2["lod_mismatch_mV"]
+    assert m2["dummies_per_side"] == 2
+
+
+@pytest.mark.parametrize("dummies", [1, 2])
+def test_dummy_layout_is_drc_clean(dummies):
+    import os
+    import tempfile
+    from layout_opt.klayout_drc import run_drc
+    ly, _t, _s, _m = build_cc_diffpair(guard=True, dummies=dummies)
     fd, path = tempfile.mkstemp(suffix=".gds")
     os.close(fd)
     try:

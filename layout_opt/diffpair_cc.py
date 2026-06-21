@@ -17,6 +17,7 @@ import klayout.db as db
 
 from .device_layout import add_device, layer_index, device_extent
 from .common_centroid import gradient_mismatch
+from .lde import array_lod_offset
 
 W_DEFAULT, L_DEFAULT = 1.0, 0.15
 PORTS = ["VINP", "VINN", "n1", "n2", "TAIL"]
@@ -29,8 +30,13 @@ DEV_NETS = {  # finger device -> {terminal: net}
 
 
 def build_cc_diffpair(wf: float = W_DEFAULT, l: float = L_DEFAULT, pattern=None,
-                      guard: bool = True):
-    """Build the common-centroid input pair. Returns (layout, top, schem, metrics)."""
+                      guard: bool = True, dummies: int = 0):
+    """Build the common-centroid input pair. Returns (layout, top, schem, metrics).
+
+    `dummies` inactive fingers are added at *each* end (gate/source/drain tied to
+    TAIL, i.e. off). They equalize the STI/LOD environment of the active edge
+    fingers — see lde.py — and re-combine on extraction into one off device.
+    """
     pattern = pattern or PATTERN
     ly = db.Layout(); ly.dbu = 0.005
     top = ly.create_cell("DIFFPAIR_CC")
@@ -49,21 +55,25 @@ def build_cc_diffpair(wf: float = W_DEFAULT, l: float = L_DEFAULT, pattern=None,
         top.shapes(li[layer]).insert(
             db.Text(net, db.Trans(db.Vector(round(x / ly.dbu), round(y / ly.dbu)))))
 
-    # 1. Place the fingers in a row (ABBA); collect net -> riser points.
+    # 1. Place the fingers in a row: `dummies` off fingers, ABBA active, dummies.
+    #    Dummy fingers tie S/G/D -> TAIL (off); active fingers per DEV_NETS.
     fw, _fh = device_extent(wf, l)
     pitch = fw + 0.9
+    slots = ["D"] * dummies + list(pattern) + ["D"] * dummies   # "D" = dummy
     net_ports: dict[str, list] = {}
     centroids: dict[str, list] = {"A": [], "B": []}
     top_y = 0.0
-    for i, dev in enumerate(pattern):
+    for i, dev in enumerate(slots):
         terms = add_device(top, li, i * pitch, 0.0, wf, l, "nmos")
         sb, dbx, gb = terms["S"], terms["D"], terms["G"]
         pts = {"S": (sb[0] + 0.07, (sb[1] + sb[3]) / 2),
                "D": (dbx[2] - 0.07, (dbx[1] + dbx[3]) / 2),
                "G": ((gb[0] + gb[2]) / 2, (gb[1] + gb[3]) / 2)}
-        for term, net in DEV_NETS[dev].items():
+        nets = {"S": "TAIL", "G": "TAIL", "D": "TAIL"} if dev == "D" else DEV_NETS[dev]
+        for term, net in nets.items():
             net_ports.setdefault(net, []).append(pts[term])
-        centroids[dev].append(i)
+        if dev in ("A", "B"):
+            centroids[dev].append(i)
         top_y = max(top_y, gb[3])
 
     # 2. Three-layer routing: met2 risers + met3 per-net buses.
@@ -111,15 +121,20 @@ def build_cc_diffpair(wf: float = W_DEFAULT, l: float = L_DEFAULT, pattern=None,
     nf = pattern.count("A")
     schem = [{"name": "M1", "kind": "nmos", "W": round(nf * wf, 4), "L": l, **DEV_NETS["A"]},
              {"name": "M2", "kind": "nmos", "W": round(nf * wf, 4), "L": l, **DEV_NETS["B"]}]
+    if dummies:                                      # off fingers merge into 1 device
+        schem.append({"name": "MD", "kind": "nmos", "W": round(2 * dummies * wf, 4),
+                      "L": l, "G": "TAIL", "D": "TAIL", "S": "TAIL"})
     # Contrast: the naive segregated (AABB) order with the same fingers — its
     # centroids are offset, so a linear gradient leaves a residual mismatch.
     seg = [sorted(pattern)]                          # ['A','A','B','B']
     seg_mm = gradient_mismatch(seg, 1.0, 0.0)
     cc_mm = gradient_mismatch(grid, 1.0, 0.0)
+    lod = array_lod_offset(list(pattern), dummies, pitch, l)
     metrics = {"pattern": "".join(pattern), "centroid_A": ca, "centroid_B": cb,
                "centroid_offset": round(abs(ca - cb), 3),
                "gradient_mismatch": round(cc_mm, 4),
                "segregated_mismatch": round(seg_mm, 4),
                "improvement_x": round(seg_mm / cc_mm, 1) if cc_mm > 1e-9 else None,
-               "fingers_per_device": nf}
+               "fingers_per_device": nf, "dummies_per_side": dummies,
+               "lod_mismatch_mV": lod["mismatch_mV"]}
     return ly, top, schem, metrics
