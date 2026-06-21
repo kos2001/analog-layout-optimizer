@@ -39,9 +39,22 @@ def test_lvs_fails_on_wrong_schematic():
 
 
 def test_full_ota_lvs_matches_schematic():
-    r = lvs_ota()
+    r = lvs_ota()                                  # default includes the Cc MIM cap
     assert r["match"] is True                      # full OTA transistor P&R is LVS-clean
-    assert r["devices"]["counts"] == {"nmos": 4, "pmos": 3}
+    assert r["devices"]["counts"] == {"nmos": 4, "pmos": 3, "Cc": 1}
+
+
+def test_ota_lvs_mos_only():
+    r = lvs_ota(with_cap=False)
+    assert r["match"] is True and r["devices"]["counts"] == {"nmos": 4, "pmos": 3}
+
+
+def test_ota_with_cap_is_drc_clean():
+    from layout_opt.ota_layout import build_ota
+    from layout_opt.klayout_drc import run_drc
+    ly, top, _s, _c = build_ota(with_cap=True)
+    ly.write("/tmp/_ota_cap_drc.gds")
+    assert run_drc("/tmp/_ota_cap_drc.gds")["clean"] is True
 
 
 def test_ota_per_device_sizing_is_distinct():

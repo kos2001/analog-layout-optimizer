@@ -94,15 +94,13 @@ def build_ota(params: OpAmpParams = None, with_cap: bool = True):
 
     # 2. Three-layer routing: riser (met2) per port, met3 bus per multi-net.
     bus_y = top_y + 0.6
+    bus_geom: dict[str, tuple] = {}            # net -> (bus_y, xmin, xmax)
     for net in sorted(net_ports):
         ports = net_ports[net]
         if len(ports) == 1:
             px, py = ports[0]
             if net in PORTS:                       # single-terminal port: label terminal
                 label(net, px, py, "met1")
-            else:                                  # internal 1-pin (none here) -> riser stub
-                via1(px, py)
-            # still bring a riser so a port has a met2 presence (helps pin extraction)
             continue
         by = bus_y
         xs = [p[0] for p in ports]
@@ -112,9 +110,39 @@ def build_ota(params: OpAmpParams = None, with_cap: bool = True):
             shp("met2", px - 0.07, py - 0.07, px + 0.07, by + 0.07)         # riser
             via2(px, by)
         label(net, (min(xs) + max(xs)) / 2, by, "met3")
+        bus_geom[net] = (by, min(xs) - 0.15, max(xs) + 0.15)
         bus_y += 0.6                                                        # >=0.3 met3 gap
 
-    cap_fF = round(params.cc * 1e15, 2)            # reported; cap device is a follow-up
+    # 3. Miller cap Cc: capm (top, VOUT) over a met2 plate (bottom, n2); risers
+    #    carry n2/VOUT up to their met3 buses (met2 verticals avoid met3 shorts).
+    cap_info = None
+    cap_fF = round(params.cc * 1e15, 2)
+    if with_cap and "n2" in bus_geom and "VOUT" in bus_geom:
+        C_F = params.cc
+        S = 2.0
+        area_cap = C_F / (S * S)                    # so extracted C == C_F exactly
+        x0, y0 = cx + 1.0, 0.0
+        n2_by, n2_xmax = bus_geom["n2"][0], bus_geom["n2"][2]
+        vo_by, vo_xmax = bus_geom["VOUT"][0], bus_geom["VOUT"][2]
+        shp("met2", x0, y0, x0 + S, y0 + S)         # bottom plate (n2)
+        shp("capm", x0, y0, x0 + S, y0 + S)         # top plate (capm)
+        shp("met3", x0, y0, x0 + S, y0 + S)         # top contact (VOUT) over capm
+        # n2 riser: plate(met2) -> up -> via2 -> n2 bus (extended to the cap)
+        rx = x0 + 0.1
+        shp("met2", rx - 0.07, y0 + S, rx + 0.07, n2_by + 0.07)
+        via2(rx, n2_by)
+        shp("met3", n2_xmax, n2_by - 0.15, rx + 0.15, n2_by + 0.15)
+        # VOUT riser: capm/met3 -> tab above plate -> via2 -> met2 up -> via2 -> VOUT bus
+        vx = x0 + S - 0.18
+        shp("met3", vx - 0.15, y0 + S, vx + 0.15, y0 + S + 0.34)   # tab >=0.3 wide
+        via2(vx, y0 + S + 0.24)
+        shp("met2", vx - 0.07, y0 + S + 0.17, vx + 0.07, vo_by + 0.07)  # gap>0.14 from plate
+        via2(vx, vo_by)
+        shp("met3", vo_xmax, vo_by - 0.15, vx + 0.15, vo_by + 0.15)
+        cap_info = {"C_F": C_F, "area_cap": area_cap, "side": S}
+
     schem = [{"name": n, "kind": k, "W": sched_W[n], "L": L, **c}
              for n, k, c, _wl in DEVICES]
-    return ly, top, schem, cap_fF
+    if cap_info is None:
+        cap_info = {"C_F": params.cc, "area_cap": None, "side": None}  # value only
+    return ly, top, schem, cap_info
