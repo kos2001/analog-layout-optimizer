@@ -1,0 +1,60 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Analog Layout Optimizer">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b2330"/>
+      <stop offset="1" stop-color="#0a0c10"/>
+    </linearGradient>
+    <linearGradient id="amp" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#42a5f5"/>
+      <stop offset="1" stop-color="#ab47bc"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+
+  <!-- routing grid -->
+  <g stroke="#2a3340" stroke-width="2" opacity="0.55">
+    <line x1="0" y1="128" x2="512" y2="128"/><line x1="0" y1="192" x2="512" y2="192"/>
+    <line x1="0" y1="256" x2="512" y2="256"/><line x1="0" y1="320" x2="512" y2="320"/>
+    <line x1="0" y1="384" x2="512" y2="384"/>
+    <line x1="128" y1="0" x2="128" y2="512"/><line x1="192" y1="0" x2="192" y2="512"/>
+    <line x1="320" y1="0" x2="320" y2="512"/><line x1="384" y1="0" x2="384" y2="512"/>
+  </g>
+
+  <!-- SKY130-style layout layers under the device: diffusion (green), poly (red),
+       metal routing (blue / purple) -->
+  <g stroke-linecap="round">
+    <rect x="92" y="150" width="150" height="212" rx="14" fill="#43a047" fill-opacity="0.30"/>      <!-- diff -->
+    <rect x="150" y="120" width="26" height="272" rx="10" fill="#ef5350" fill-opacity="0.85"/>      <!-- poly -->
+    <rect x="200" y="120" width="26" height="272" rx="10" fill="#ef5350" fill-opacity="0.85"/>      <!-- poly -->
+    <rect x="300" y="178" width="150" height="22" rx="10" fill="#42a5f5"/>                          <!-- met1 -->
+    <rect x="300" y="312" width="150" height="22" rx="10" fill="#ab47bc"/>                          <!-- met2 -->
+  </g>
+
+  <!-- op-amp / OTA triangle -->
+  <path d="M176 130 L176 382 L392 256 Z" fill="#0d1117" fill-opacity="0.72"
+        stroke="url(#amp)" stroke-width="20" stroke-linejoin="round" filter="url(#glow)"/>
+
+  <!-- inputs (+ / -) and output node -->
+  <g stroke="url(#amp)" stroke-width="15" stroke-linecap="round">
+    <line x1="92" y1="196" x2="176" y2="196"/>
+    <line x1="92" y1="316" x2="176" y2="316"/>
+    <line x1="392" y1="256" x2="456" y2="256"/>
+  </g>
+  <g stroke="#e8edf4" stroke-width="11" stroke-linecap="round">
+    <line x1="206" y1="196" x2="246" y2="196"/>                 <!-- + horizontal -->
+    <line x1="226" y1="176" x2="226" y2="216"/>                 <!-- + vertical -->
+    <line x1="206" y1="316" x2="246" y2="316"/>                 <!-- - -->
+  </g>
+  <circle cx="456" cy="256" r="17" fill="#ab47bc" stroke="#0a0c10" stroke-width="4"/>
+
+  <!-- via / pin dots at device terminals (layout cue) -->
+  <g fill="#fdd835">
+    <circle cx="163" cy="362" r="9"/><circle cx="213" cy="362" r="9"/>
+    <circle cx="300" cy="189" r="9"/><circle cx="300" cy="323" r="9"/>
+  </g>
+</svg>
