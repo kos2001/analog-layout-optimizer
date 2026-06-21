@@ -96,14 +96,15 @@ export default function FlowView() {
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [showDrc, setShowDrc] = useState(true);
+  const [analog, setAnalog] = useState(false);
   const [gdsNote, setGdsNote] = useState<string | null>(null);
   const [kdrc, setKdrc] = useState<string | null>(null);
   const [lvs, setLvs] = useState<string | null>(null);
 
   useEffect(() => {
     setBusy(true); setErr(null);
-    fetchFlow(place, seed).then(setData).catch((e) => setErr(String(e))).finally(() => setBusy(false));
-  }, [place, seed]);
+    fetchFlow(place, seed, analog).then(setData).catch((e) => setErr(String(e))).finally(() => setBusy(false));
+  }, [place, seed, analog]);
 
   const exportGds = async () => {
     setGdsNote("exporting…");
@@ -155,6 +156,7 @@ export default function FlowView() {
         <div className="seg" style={{ marginBottom: 6 }}>
           <button className={place === "sa" ? "" : "secondary"} onClick={() => setPlace("sa")}>{t("flow.sa")}</button>
           <button className={place === "random" ? "" : "secondary"} onClick={() => setPlace("random")}>{t("flow.random")}</button>
+          <button className={analog ? "" : "secondary"} onClick={() => setAnalog((a) => !a)}>{t("flow.analog")}</button>
           <button className="secondary" onClick={() => setSeed(Math.floor(Math.random() * 1e6))}>{t("flow.rerun")}</button>
           <button className={showDrc ? "" : "secondary"} onClick={() => setShowDrc((s) => !s)}>{t("flow.drc.toggle")}</button>
           <button className="secondary" onClick={exportGds} disabled={busy}>{t("flow.gds")}</button>
@@ -176,7 +178,17 @@ export default function FlowView() {
                 <div><span className="metric-label">{t("flow.hpwl")}</span><span className="metric-value">{data.hpwl}</span></div>
                 <div><span className="metric-label">{t("maze.total.wl")}</span><span className="metric-value">{r.totalWirelength}</span></div>
                 <div><span className="metric-label">vias</span><span className="metric-value">{r.totalVias}</span></div>
+                {data.matching && (<>
+                  <div><span className="metric-label">{t("flow.match.sym")}</span>
+                    <span className="metric-value" style={{ color: data.matching.symmetry_penalty < 5 ? "var(--ok)" : "var(--text)" }}>
+                      {data.matching.symmetry_penalty}</span></div>
+                  <div><span className="metric-label">{t("flow.match.crit")}</span>
+                    <span className="metric-value">{data.matching.critical_wl}</span></div>
+                </>)}
               </div>
+              {data.analogAware && (
+                <p className="note" style={{ marginTop: 4 }}>{t("flow.analog.note")}</p>
+              )}
               <div className="panel-title" style={{ fontSize: 13, marginTop: 6 }}>{t("flow.netlist")}</div>
               <div style={{ maxHeight: 320, overflowY: "auto" }}>
                 <table className="tcoil-table" style={{ fontSize: 12 }}>

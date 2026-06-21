@@ -347,11 +347,12 @@ def _scenario(args):
 def _signoff(args):
     """Place+route the OTA and run physical sign-off (DRC + LVS + connectivity)."""
     from layout_opt.placement import run_flow
-    f = run_flow(place=args.place, seed=args.seed)
+    f = run_flow(place=args.place, seed=args.seed, analog_aware=getattr(args, "analog", False))
     so = f["signoff"]
     return {"op": "signoff", "verdict": so["verdict"], "hpwl": f["hpwl"],
             "checks": so["checks"], "drc": so["drc"]["counts"],
-            "lvs_clean": so["lvs"]["clean"]}
+            "lvs_clean": so["lvs"]["clean"], "matching": f["matching"],
+            "post_pm_deg": f["postlayout"]["post"]["pm_deg"]}
 
 
 def _pvt(args):
@@ -430,7 +431,9 @@ def main() -> int:
     p.set_defaults(fn=_scenario)
     p = sub.add_parser("signoff", help="place+route the OTA and run DRC+LVS sign-off")
     p.add_argument("--place", choices=["sa", "random"], default="sa")
-    p.add_argument("--seed", type=int, default=0); p.set_defaults(fn=_signoff)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--analog", action="store_true", help="op-amp-aware placement (matching + critical-net)")
+    p.set_defaults(fn=_signoff)
     p = sub.add_parser("pvt", help="SKY130 PVT corner analysis (slow; needs PDK_ROOT)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--full", action="store_true", help="all 27 P/V/T corners (default: 3 essential)")
