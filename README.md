@@ -151,8 +151,11 @@ stay compact (KLayout merges the fingers back to the full W). Routing is
 result is **met1/met2/met3 DRC-clean** (width + spacing) *and* **LVS-clean** —
 4 nmos + 3 pmos, every net matched, each device's W verified. `alo.py lvs
 --cell ota`, `/api/lvs?cell=ota`, or the **Transistor LVS (KLayout)** button;
-the transistor-level GDS exports too. (Cc's value is reported; a real MIM-cap
-device is a follow-up — the seven transistors define every net on their own.)
+the transistor-level GDS exports too. **Cc** is laid out as a real **MIM cap**
+(capm top plate / met2 bottom plate) and extracted with KLayout's capacitor
+extractor, so the LVS is the **full 8-device network** (4 nmos + 3 pmos + Cc ≈
+117 fF, n2↔VOUT). The whole layout — including the cap — is **met1/met2/met3
+DRC-clean**, and renders in the **Layout view** tab.
 
 ### Real SKY130 silicon (`ngspice_backend.py`)
 

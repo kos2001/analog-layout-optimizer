@@ -24,6 +24,7 @@ SKY_LAYERS = [
     ((69, 20), "met2", "#ce93d8"),
     ((69, 44), "via2", "#fff176"),
     ((70, 20), "met3", "#ffb300"),
+    ((89, 44), "capm", "#00bcd4"),
 ]
 
 
@@ -48,7 +49,7 @@ def layout_shapes(which: str = "ota") -> dict:
         ly, top = build_current_mirror()
     else:
         from .ota_layout import build_ota
-        ly, top, _s, _c = build_ota(with_cap=False)
+        ly, top, _s, _c = build_ota(with_cap=True)
     dbu = ly.dbu
 
     out_layers = []

@@ -14,8 +14,12 @@ import klayout.db as db
 from .device_layout import LAYERS
 
 
-def extract_netlist(layout: db.Layout, cell: db.Cell):
-    """Extract a device-level netlist from a transistor layout. Returns (netlist, l2n)."""
+def extract_netlist(layout: db.Layout, cell: db.Cell, cap: dict = None):
+    """Extract a device-level netlist from a transistor layout. Returns (netlist, l2n).
+
+    If `cap` ({"area_cap": F/um^2}) is given, also extract a MIM capacitor between
+    the capm plate (89/44) and met2.
+    """
     li = {k: layout.layer(*v) for k, v in LAYERS.items()}
     l2n = db.LayoutToNetlist(db.RecursiveShapeIterator(layout, cell, []))
     _extra = {"via": (68, 44), "met2": (69, 20), "via2": (69, 44), "met3": (70, 20)}
@@ -37,6 +41,14 @@ def extract_netlist(layout: db.Layout, cell: db.Cell):
     l2n.extract_devices(exn, {"SD": sd_n, "G": gate_n, "tS": sd_n, "tD": sd_n, "tG": R["poly"]})
     exp = db.DeviceExtractorMOS3Transistor("pmos")
     l2n.extract_devices(exp, {"SD": sd_p, "G": gate_p, "tS": sd_p, "tD": sd_p, "tG": R["poly"]})
+
+    if cap and cap.get("area_cap"):
+        li.setdefault("capm", layout.layer(89, 44))
+        rcapm = l2n.make_layer(li["capm"], "capm")
+        excap = db.DeviceExtractorCapacitor("Cc", cap["area_cap"])
+        l2n.extract_devices(excap, {"P1": rcapm, "P2": R["met2"]})
+        l2n.connect(rcapm)
+        l2n.connect(rcapm, R["met3"])             # capm top plate -> met3 (VOUT)
 
     # Connectivity: contacts bridge diff/poly -> li1 -> mcon -> met1 -> via -> met2.
     for r in (sd_n, sd_p, R["poly"], R["licon"], R["li1"], R["mcon"], R["met1"],
@@ -72,14 +84,15 @@ def device_summary(netlist: db.Netlist) -> dict:
 
 
 def schematic_mos_netlist(devices: list[dict], ports: list[str] = None,
-                          name: str = "REF") -> db.Netlist:
-    """Build a reference netlist from [{name,kind,S,G,D}] (kind: nmos|pmos).
+                          name: str = "REF", caps: list[dict] = None) -> db.Netlist:
+    """Build a reference netlist from MOS [{name,kind,S,G,D}] + cap [{name,A,B,C}].
 
     `ports` net names become top-level pins so LVS can anchor net correspondence.
     """
     nl = db.Netlist()
     clsn = db.DeviceClassMOS3Transistor(); clsn.name = "nmos"; nl.add(clsn)
     clsp = db.DeviceClassMOS3Transistor(); clsp.name = "pmos"; nl.add(clsp)
+    clsc = db.DeviceClassCapacitor(); clsc.name = "Cc"; nl.add(clsc)
     cir = db.Circuit(); cir.name = name; nl.add(cir)
     nets = {}
     def net(n):
@@ -94,6 +107,11 @@ def schematic_mos_netlist(devices: list[dict], ports: list[str] = None,
             dev.connect_terminal(TERM[t], net(d[t]))
         dev.set_parameter("W", float(d.get("W", 1.0)))   # must match extracted
         dev.set_parameter("L", float(d.get("L", 0.15)))
+    for c in (caps or []):
+        dev = cir.create_device(clsc, c["name"])
+        dev.connect_terminal(0, net(c["A"]))             # capacitor terminals A, B
+        dev.connect_terminal(1, net(c["B"]))
+        dev.set_parameter("C", float(c["C"]))
     for pn in (ports or []):
         pin = cir.create_pin(pn)
         cir.connect_pin(pin, net(pn))
@@ -121,19 +139,23 @@ def lvs_current_mirror(w: float = 1.0, l: float = 0.15) -> dict:
             "layout_netlist": layout_nl.to_s()}
 
 
-def lvs_ota(gds_out: str | None = None, with_cap: bool = False) -> dict:
+def lvs_ota(gds_out: str | None = None, with_cap: bool = True) -> dict:
     """Full two-stage OTA: transistor-level P&R, extract, and LVS vs schematic."""
     from .ota_layout import build_ota, PORTS
-    ly, top, schem_devs, cap_fF = build_ota(with_cap=with_cap)
+    ly, top, schem_devs, cap_info = build_ota(with_cap=with_cap)
     if gds_out:
         ly.write(gds_out)
-    layout_nl, _l2n = extract_netlist(ly, top)
-    schem = schematic_mos_netlist(schem_devs, ports=PORTS, name="OTA")
+    cap = cap_info if (with_cap and cap_info.get("area_cap")) else None
+    layout_nl, _l2n = extract_netlist(ly, top, cap=cap)
+    caps = ([{"name": "Cc", "A": "VOUT", "B": "n2", "C": cap_info["C_F"]}]
+            if cap else None)
+    schem = schematic_mos_netlist(schem_devs, ports=PORTS, name="OTA", caps=caps)
     match = compare(layout_nl, schem)
-    return {"tool": "KLayout LVS (DeviceExtractorMOS3 + NetlistComparer)",
+    return {"tool": "KLayout LVS (MOS3 + Capacitor extractor + NetlistComparer)",
             "cell": "OTA", "match": match,
-            "note": "7 MOSFETs, per-device real sizing (multi-finger), met1/2/3 DRC-clean",
-            "capCc_fF": cap_fF,
+            "note": "7 MOSFETs (per-device multi-finger sizing) + Cc MIM cap, DRC-clean"
+                    if cap else "7 MOSFETs, per-device sizing (no cap)",
+            "capCc_fF": round(cap_info["C_F"] * 1e15, 2),
             "perDeviceW": {d["name"]: d["W"] for d in schem_devs},
             "devices": device_summary(layout_nl),
             "layout_netlist": layout_nl.to_s()}
