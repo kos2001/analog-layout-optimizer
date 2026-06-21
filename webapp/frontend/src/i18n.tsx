@@ -58,6 +58,12 @@ const S: Record<string, { en: string; ko: string }> = {
   "flow.gds": { en: "Export GDS", ko: "GDS 내보내기" },
   "flow.kdrc": { en: "Real DRC (KLayout)", ko: "실제 DRC (KLayout)" },
   "flow.lvs": { en: "Transistor LVS (KLayout)", ko: "트랜지스터 LVS (KLayout)" },
+  "flow.analog": { en: "Analog-aware placement", ko: "아날로그 인식 배치" },
+  "flow.match.sym": { en: "symmetry penalty", ko: "대칭 페널티" },
+  "flow.match.crit": { en: "critical-net WL (n1/n2)", ko: "핵심넷 WL (n1/n2)" },
+  "flow.analog.note": {
+    en: "Op-amp placement: matched pairs (input pair, mirror) pulled symmetric for matching, and the high-impedance gain nodes (n1/n2) weighted short to cut parasitic phase-margin loss. A real matching-vs-routability trade-off — tighter matching can leave a net to re-route.",
+    ko: "Op-amp 배치: 매칭쌍(입력쌍·미러)을 대칭으로 당겨 매칭을 높이고, 고임피던스 이득 노드(n1/n2)를 짧게 가중해 기생 위상여유 손실을 줄입니다. 매칭 vs 라우팅 가능성의 실제 trade-off — 매칭을 빡빡하게 하면 일부 넷 재배선이 필요할 수 있음." },
   "flow.signoff": { en: "Sign-off", ko: "Sign-off (검증)" },
   "flow.signoff.pass": { en: "PASS (tape-out clean)", ko: "PASS (테이프아웃 가능)" },
   "flow.signoff.fail": { en: "FAIL", ko: "FAIL" },

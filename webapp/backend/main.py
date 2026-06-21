@@ -408,10 +408,10 @@ def get_ppa(w_power: float = 1.0, w_area: float = 1.0, w_perf: float = 1.0,
 
 
 @app.get("/api/flow")
-def get_flow(place: str = "sa", seed: int = 0) -> dict:
+def get_flow(place: str = "sa", seed: int = 0, analog: bool = False) -> dict:
     """Schematic -> placement -> routing, connected by one netlist."""
     place = place if place in ("sa", "random") else "sa"
-    return _flow.run_flow(place=place, seed=seed)
+    return _flow.run_flow(place=place, seed=seed, analog_aware=analog)
 
 
 @app.get("/api/full-flow")

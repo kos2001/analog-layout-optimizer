@@ -261,6 +261,10 @@ export interface PostLayout {
   parasitics: Record<string, NetParasitic>;
   stable: boolean;
 }
+export interface MatchingMetrics {
+  symmetry_penalty: number; critical_wl: number;
+  pair_distance: Record<string, number>;
+}
 export interface FlowData {
   width: number; height: number; layers: number; place: string;
   hpwl: number;
@@ -269,6 +273,8 @@ export interface FlowData {
   routing: FlowRouting;
   signoff: Signoff;
   postlayout: PostLayout;
+  matching?: MatchingMetrics;
+  analogAware?: boolean;
 }
 export interface GdsStats {
   topCell: string; polygons: number;

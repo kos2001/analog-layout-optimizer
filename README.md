@@ -105,6 +105,21 @@ cd webapp/frontend && npm install && npm run dev      # http://localhost:5173
 **2-layer** surface routes them all. E.g. the macro+power-grid case: fixed-order
 leaves a net unrouted; negotiation routes all 8 cleanly.
 
+### Op-amp-aware placement (matching + critical-net)
+
+The SA placer (`placement.py`, `analog_aware=True`) adds the two layout concerns
+that dominate op-amp quality: **device matching** — matched pairs (input pair
+M1/M2, mirror M3/M4) are pulled into a symmetric, abutted placement (offset/CMRR
+and gain-error come from random pair offsets) — and **critical-node parasitics**
+— the high-impedance gain nets (n1/n2), where parasitic C costs the most phase
+margin, are weighted to stay short. Schematic→P&R tab → **Analog-aware
+placement**, or `alo.py signoff --analog`.
+
+Effect vs plain HPWL placement (seed 0): symmetry penalty **37 → 2.5**,
+critical-net WL **31 → 17**, and post-layout **PM 48.7° → 59.2°**. It's a real
+matching-vs-routability trade-off — tighter matching can leave a net to reroute
+(the router turns that into an honest open, flagged by sign-off).
+
 ### Sign-off (DRC + LVS) and post-layout
 
 `drc.py` checks the routed geometry (short/corner/via-spacing/open); `signoff.py`
