@@ -56,6 +56,52 @@ def _wh(sch: Schematic) -> dict[str, tuple[int, int]]:
     return {d.name: (d.w, d.h) for d in sch.devices}
 
 
+# --- op-amp layout-quality knobs ---------------------------------------------
+# High-impedance gain nodes: parasitic C here costs the most phase margin
+# (post-layout), so keep their nets short.
+CRITICAL_NETS = {"n1", "n2"}
+# Matched device pairs that want a symmetric / abutted placement for matching
+# (random offsets between them => offset/CMRR and gain-error in a diff amp).
+MATCHED_PAIRS = [("M1", "M2"), ("M3", "M4")]
+
+
+def crit_hpwl(sch: Schematic, pos: dict) -> int:
+    """HPWL over the gain-critical (high-impedance) nets only."""
+    total = 0
+    for net, cells in _abs_pins(sch, pos).items():
+        if net in CRITICAL_NETS and len(cells) >= 2:
+            xs = [c[0] for c in cells]; ys = [c[1] for c in cells]
+            total += (max(xs) - min(xs)) + (max(ys) - min(ys))
+    return total
+
+
+def symmetry_penalty(pos: dict, wh: dict) -> float:
+    """Penalty for matched pairs not being mirror-symmetric (same row, centered)."""
+    cx = _RX + _RW / 2
+    pen = 0.0
+    for a, b in MATCHED_PAIRS:
+        if a in pos and b in pos:
+            ca = pos[a][0] + wh[a][0] / 2
+            cb = pos[b][0] + wh[b][0] / 2
+            pen += abs((ca + cb) / 2 - cx)        # pair centroid on the symmetry axis
+            pen += abs(pos[a][1] - pos[b][1])     # same row
+    return pen
+
+
+def matching_metrics(sch: Schematic, pos: dict) -> dict:
+    """Op-amp layout-quality metrics: symmetry, matched-pair distance, crit-net WL."""
+    wh = _wh(sch)
+    pairs = {}
+    for a, b in MATCHED_PAIRS:
+        if a in pos and b in pos:
+            ca = (pos[a][0] + wh[a][0] / 2, pos[a][1] + wh[a][1] / 2)
+            cb = (pos[b][0] + wh[b][0] / 2, pos[b][1] + wh[b][1] / 2)
+            pairs[f"{a}/{b}"] = round(((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2) ** 0.5, 2)
+    return {"symmetry_penalty": round(symmetry_penalty(pos, wh), 2),
+            "critical_wl": crit_hpwl(sch, pos),
+            "pair_distance": pairs}
+
+
 def _overlap(pos, wh, names, margin: int = 1) -> int:
     """Total overlapping area among the given devices (footprints + margin)."""
     over = 0
@@ -93,8 +139,16 @@ def random_place(sch: Schematic = None, seed: int = 0) -> dict[str, tuple[int, i
     return pos
 
 
-def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000) -> dict[str, tuple[int, int]]:
-    """Simulated-annealing placement minimizing HPWL + overlap penalty."""
+def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000,
+             analog_aware: bool = False, w_crit: float = 4.0,
+             w_sym: float = 6.0) -> dict[str, tuple[int, int]]:
+    """Simulated-annealing placement minimizing HPWL + overlap penalty.
+
+    `analog_aware` adds op-amp layout objectives: weight the gain-critical
+    high-impedance nets (n1/n2) so they stay short (less parasitic -> more phase
+    margin) and pull matched pairs (input pair, mirror) into a symmetric,
+    abutted placement (matching -> lower offset / gain error).
+    """
     sch = sch or two_stage_ota()
     rng = random.Random(seed)
     wh = _wh(sch)
@@ -102,7 +156,10 @@ def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000) -> dict[st
     OV = 50
 
     def cost(p):
-        return hpwl(sch, p) + OV * _overlap(p, wh, CORE_NAMES)
+        c = hpwl(sch, p) + OV * _overlap(p, wh, CORE_NAMES)
+        if analog_aware:
+            c += w_crit * crit_hpwl(sch, p) + w_sym * symmetry_penalty(p, wh)
+        return c
 
     cur = cost(pos)
     T0, T1 = 12.0, 0.05
@@ -158,14 +215,17 @@ def route_placement(comps: list[Component]) -> dict:
     }
 
 
-def run_flow(place: str = "sa", seed: int = 0, sizing=None) -> dict:
+def run_flow(place: str = "sa", seed: int = 0, sizing=None,
+             analog_aware: bool = False) -> dict:
     """Schematic -> placement -> routing -> sign-off, end to end.
 
     `sizing` (OpAmpParams) is used for the post-layout re-sim; defaults to the
     representative DEMO_SIZING when not supplied by an upstream sizing stage.
+    `analog_aware` turns on op-amp placement objectives (matching + critical-net).
     """
     sch = two_stage_ota()
-    pos = sa_place(sch, seed) if place == "sa" else random_place(sch, seed)
+    pos = (sa_place(sch, seed, analog_aware=analog_aware) if place == "sa"
+           else random_place(sch, seed))
     comps = sch.to_components(pos)
     routing = route_placement(comps)
     netlist = {net: [f"{d}.{t}" for d, t in conns]
@@ -189,4 +249,6 @@ def run_flow(place: str = "sa", seed: int = 0, sizing=None) -> dict:
         "postlayout": _par.post_layout_from_routing(
             routing, p=sizing) if sizing is not None
         else _par.post_layout_from_routing(routing),
+        "matching": matching_metrics(sch, pos),
+        "analogAware": analog_aware,
     }
