@@ -176,6 +176,17 @@ extractor, so the LVS is the **full 8-device network** (4 nmos + 3 pmos + Cc ≈
 117 fF, n2↔VOUT). The whole layout — including the cap — is **met1/met2/met3
 DRC-clean**, and renders in the **Layout view** tab.
 
+**Common-centroid input pair** (`diffpair_cc.py`): the matching-critical input
+pair M1/M2 is laid out as an **ABBA interdigitated finger array** — both devices
+share one centroid, so a *linear* process gradient contributes equally to each
+and cancels (gradient mismatch **0** vs **0.5** for naive segregated AABB). Each
+finger is a real device; the array re-combines on extraction into **two matched
+nmos** (W = nf·wf), and a **p+ guard ring** frames the cell (tied into TAIL — pure
+substrate contact, no extra device pin, so LVS still matches). The result is
+**LVS-clean and met1/met2/met3 DRC-clean** with the guard ring on or off.
+`alo.py lvs --cell diffpair`, `/api/lvs?cell=diffpair`, or the **Diff pair
+(common-centroid)** button in the Layout view.
+
 ### Real SKY130 silicon (`ngspice_backend.py`)
 
 The OTA Verify can run on real **SkyWater SKY130** BSIM devices

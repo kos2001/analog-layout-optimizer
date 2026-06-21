@@ -197,5 +197,5 @@ export const fetchLvs = () => fetch("/api/lvs").then((r) => r.json() as Promise<
 
 import type { LayoutShapes } from "./types";
 
-export const fetchLayoutShapes = (which: "ota" | "mirror" = "ota") =>
+export const fetchLayoutShapes = (which: "ota" | "mirror" | "diffpair" = "ota") =>
   fetch(`/api/layout/shapes?which=${which}`).then((r) => r.json() as Promise<LayoutShapes>);

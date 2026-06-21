@@ -27,6 +27,11 @@ const S: Record<string, { en: string; ko: string }> = {
   "lay.title": { en: "Layout viewer — real SKY130 transistor geometry", ko: "레이아웃 뷰어 — 실제 SKY130 트랜지스터 지오메트리" },
   "lay.ota": { en: "OTA (7 devices)", ko: "OTA (7 소자)" },
   "lay.mirror": { en: "Current mirror", ko: "전류 미러" },
+  "lay.diffpair": { en: "Diff pair (common-centroid)", ko: "차동쌍 (공통중심)" },
+  "lay.diffpair.note": {
+    en: "Input pair M1/M2 laid ABBA so both share one centroid — a linear process gradient cancels (mismatch 0 vs 0.5 segregated). Framed by a p+ guard ring. LVS-clean: 4 fingers → 2 matched nmos.",
+    ko: "입력쌍 M1/M2를 ABBA로 배치해 공통중심 공유 — 선형 공정 구배가 상쇄(부정합 0 vs 분리배치 0.5). p+ 가드링으로 둘러쌈. LVS 일치: 핑거 4개 → 매칭된 nmos 2개.",
+  },
   "lay.note": {
     en: "The actual transistor-level GDS rendered in the browser — diffusion / poly / contacts / li1 / met1-2-3 on SKY130 layers, with net labels. Toggle layers in the legend. This is the same geometry KLayout DRCs and LVSes.",
     ko: "실제 트랜지스터-레벨 GDS를 브라우저에서 렌더 — SKY130 레이어의 diffusion/poly/contact/li1/met1-2-3 + 넷 라벨. 범례에서 레이어 토글. KLayout이 DRC·LVS하는 바로 그 지오메트리입니다." },

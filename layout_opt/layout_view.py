@@ -47,6 +47,9 @@ def layout_shapes(which: str = "ota") -> dict:
     if which == "mirror":
         from .device_layout import build_current_mirror
         ly, top = build_current_mirror()
+    elif which == "diffpair":
+        from .diffpair_cc import build_cc_diffpair
+        ly, top, _s, _m = build_cc_diffpair(guard=True)
     else:
         from .ota_layout import build_ota
         ly, top, _s, _c = build_ota(with_cap=True)
