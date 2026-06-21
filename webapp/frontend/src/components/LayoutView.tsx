@@ -5,7 +5,7 @@ import type { LayoutShapes } from "../types";
 
 export default function LayoutView() {
   const { t } = useT();
-  const [which, setWhich] = useState<"ota" | "mirror">("ota");
+  const [which, setWhich] = useState<"ota" | "mirror" | "diffpair">("ota");
   const [data, setData] = useState<LayoutShapes | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
@@ -40,7 +40,11 @@ export default function LayoutView() {
         <div className="seg" style={{ marginBottom: 8 }}>
           <button className={which === "ota" ? "" : "secondary"} onClick={() => setWhich("ota")}>{t("lay.ota")}</button>
           <button className={which === "mirror" ? "" : "secondary"} onClick={() => setWhich("mirror")}>{t("lay.mirror")}</button>
+          <button className={which === "diffpair" ? "" : "secondary"} onClick={() => setWhich("diffpair")}>{t("lay.diffpair")}</button>
         </div>
+        {which === "diffpair" && (
+          <div className="hint" style={{ marginBottom: 8 }}>{t("lay.diffpair.note")}</div>
+        )}
         {!data ? <div className="loading">{t("loading")}</div> : (
           <div className="maze-wrap">
             <svg width={W} height={H} style={{ background: "#0b0d12", borderRadius: 8, maxWidth: "100%" }}>

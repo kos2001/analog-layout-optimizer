@@ -426,7 +426,7 @@ def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False) -> dic
 def get_layout_shapes(which: str = "ota") -> dict:
     """Per-SKY130-layer polygons of a transistor layout, for the in-browser viewer."""
     from layout_opt.layout_view import layout_shapes
-    return layout_shapes(which if which in ("ota", "mirror") else "ota")
+    return layout_shapes(which if which in ("ota", "mirror", "diffpair") else "ota")
 
 
 @app.get("/api/flow/gds")
@@ -444,9 +444,13 @@ def get_flow_gds(place: str = "sa", seed: int = 0) -> dict:
 
 @app.get("/api/lvs")
 def get_lvs(cell: str = "ota") -> dict:
-    """Transistor-level layout synthesis + real KLayout LVS (full OTA or current mirror)."""
-    from layout_opt.klayout_lvs import lvs_current_mirror, lvs_ota
-    return lvs_ota() if cell == "ota" else lvs_current_mirror()
+    """Transistor-level layout synthesis + real KLayout LVS (OTA / mirror / diff pair)."""
+    from layout_opt.klayout_lvs import lvs_current_mirror, lvs_ota, lvs_diffpair
+    if cell == "mirror":
+        return lvs_current_mirror()
+    if cell == "diffpair":
+        return lvs_diffpair()
+    return lvs_ota()
 
 
 @app.get("/api/flow/drc-klayout")
