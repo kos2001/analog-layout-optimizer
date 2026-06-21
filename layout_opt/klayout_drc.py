@@ -19,6 +19,7 @@ from __future__ import annotations
 METAL_RULES = {
     "met1": {"gds": (68, 20), "min_width": 0.14, "min_space": 0.14},
     "met2": {"gds": (69, 20), "min_width": 0.14, "min_space": 0.14},
+    "met3": {"gds": (70, 20), "min_width": 0.30, "min_space": 0.30},
 }
 
 

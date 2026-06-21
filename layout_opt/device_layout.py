@@ -18,7 +18,8 @@ import klayout.db as db
 LAYERS = {
     "nwell": (64, 20), "diff": (65, 20), "poly": (66, 20), "licon": (66, 44),
     "li1": (67, 20), "mcon": (67, 44), "met1": (68, 20), "via": (68, 44),
-    "met2": (69, 20), "nsdm": (93, 44), "psdm": (94, 20),
+    "met2": (69, 20), "via2": (69, 44), "met3": (70, 20),
+    "nsdm": (93, 44), "psdm": (94, 20),
 }
 
 # Geometry constants (microns) — simplified but DRC-plausible.
@@ -87,6 +88,69 @@ def add_device(cell: db.Cell, li: dict, x: float, y: float, w: float, l: float,
 def device_extent(w: float, l: float) -> tuple[float, float]:
     """(width_x, height_y) footprint of a device, including the gate tab."""
     return (2 * SD_EXT + l, w + 2 * POLY_EXT + GATE_TAB)
+
+
+def n_fingers(w_total: float, wf_max: float = 2.5) -> tuple[int, float]:
+    """Split a total width into (nf, finger_width) keeping each finger <= wf_max."""
+    import math
+    nf = max(1, math.ceil(w_total / wf_max))
+    return nf, w_total / nf
+
+
+def add_mf_device(cell: db.Cell, li: dict, x: float, y: float, wf: float, l: float,
+                  kind: str, nf: int = 1) -> dict:
+    """Multi-finger MOSFET: nf gates over one active, S/D combs tied, gates tied.
+
+    Total width = nf * wf. Sources tie to a met1 strip below the active, drains
+    to a strip above; gates tie via a poly bridge to a contact at the top.
+    Returns {"S","D","G"} met1 terminal boxes. KLayout extracts the nf parallel
+    fingers and merges them into one device of width nf*wf.
+    """
+    def box(layer, x0, y0, x1, y1):
+        cell.shapes(li[layer]).insert(db.DBox(x0, y0, x1, y1))
+
+    sd = SD_EXT
+    ax0, ay0, ay1 = x, y, y + wf
+    ax1 = x + nf * l + (nf + 1) * sd
+    box("diff", ax0, ay0, ax1, ay1)
+    box("nsdm" if kind == "nmos" else "psdm", ax0 - 0.1, ay0 - 0.1, ax1 + 0.1, ay1 + 0.1)
+    if kind == "pmos":
+        box("nwell", ax0 - 0.18, ay0 - 0.18, ax1 + 0.18, ay1 + 0.18)
+
+    s_y0, s_y1 = ay0 - 0.34, ay0 - 0.14          # source comb strip (below)
+    d_y0, d_y1 = ay1 + 0.14, ay1 + 0.34          # drain comb strip (above)
+    box("met1", ax0, s_y0, ax1, s_y1)
+    box("met1", ax0, d_y0, ax1, d_y1)
+
+    for j in range(nf + 1):                       # S/D regions (alternate S,D)
+        rx0 = x + j * (l + sd)
+        cx = rx0 + sd / 2
+        cy = (ay0 + ay1) / 2
+        box("licon", cx - CON, cy - CON, cx + CON, cy + CON)
+        box("li1", rx0 + 0.03, ay0 + 0.03, rx0 + sd - 0.03, ay1 - 0.03)
+        box("mcon", cx - CON, cy - CON, cx + CON, cy + CON)
+        box("met1", rx0, ay0, rx0 + sd, ay1)
+        if j % 2 == 0:                            # source -> down stub to S strip
+            box("met1", rx0, s_y1, rx0 + sd, ay0)
+        else:                                     # drain -> up stub to D strip
+            box("met1", rx0, ay1, rx0 + sd, d_y0)
+
+    for i in range(nf):                           # gate polys
+        gx0 = x + sd + i * (l + sd)
+        box("poly", gx0, ay0 - POLY_EXT, gx0 + l, d_y1 + 0.12)   # tab up past D strip
+    bridge_y0, bridge_y1 = d_y1 + 0.08, d_y1 + 0.16              # poly bridge (gates tied)
+    box("poly", x + sd, bridge_y0, x + nf * l + nf * sd, bridge_y1)
+    gcx = (x + sd + x + nf * l + nf * sd) / 2                    # gate contact
+    gcy0, gcy1 = bridge_y1, bridge_y1 + GATE_TAB
+    box("poly", gcx - 0.04, bridge_y0, gcx + 0.04, gcy1)
+    box("licon", gcx - CON, (gcy0 + gcy1) / 2 - CON, gcx + CON, (gcy0 + gcy1) / 2 + CON)
+    box("li1", gcx - (CON + 0.015), gcy0, gcx + (CON + 0.015), gcy1)
+    box("mcon", gcx - CON, (gcy0 + gcy1) / 2 - CON, gcx + CON, (gcy0 + gcy1) / 2 + CON)
+    box("met1", gcx - (CON + 0.015), gcy0, gcx + (CON + 0.015), gcy1)
+
+    return {"S": (ax0, s_y0, ax1, s_y1), "D": (ax0, d_y0, ax1, d_y1),
+            "G": (gcx - (CON + 0.015), gcy0, gcx + (CON + 0.015), gcy1),
+            "width_x": ax1 - ax0, "kind": kind, "W": nf * wf, "L": l}
 
 
 def build_current_mirror(w: float = 1.0, l: float = 0.15):

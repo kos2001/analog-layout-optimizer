@@ -18,10 +18,12 @@ def extract_netlist(layout: db.Layout, cell: db.Cell):
     """Extract a device-level netlist from a transistor layout. Returns (netlist, l2n)."""
     li = {k: layout.layer(*v) for k, v in LAYERS.items()}
     l2n = db.LayoutToNetlist(db.RecursiveShapeIterator(layout, cell, []))
-    for extra in ("via", "met2"):
-        li.setdefault(extra, layout.layer(*{"via": (68, 44), "met2": (69, 20)}[extra]))
+    _extra = {"via": (68, 44), "met2": (69, 20), "via2": (69, 44), "met3": (70, 20)}
+    for k, v in _extra.items():
+        li.setdefault(k, layout.layer(*v))
     R = {n: l2n.make_layer(li[n], n) for n in
-         ("nwell", "diff", "poly", "licon", "li1", "mcon", "met1", "via", "met2")}
+         ("nwell", "diff", "poly", "licon", "li1", "mcon", "met1", "via", "met2",
+          "via2", "met3")}
 
     nwell = R["nwell"]
     diff_p = R["diff"] & nwell           # PMOS active sits in nwell
@@ -38,13 +40,14 @@ def extract_netlist(layout: db.Layout, cell: db.Cell):
 
     # Connectivity: contacts bridge diff/poly -> li1 -> mcon -> met1 -> via -> met2.
     for r in (sd_n, sd_p, R["poly"], R["licon"], R["li1"], R["mcon"], R["met1"],
-              R["via"], R["met2"]):
+              R["via"], R["met2"], R["via2"], R["met3"]):
         l2n.connect(r)
     l2n.connect(sd_n, R["licon"]); l2n.connect(sd_p, R["licon"])
     l2n.connect(R["poly"], R["licon"])
     l2n.connect(R["licon"], R["li1"]); l2n.connect(R["li1"], R["mcon"])
     l2n.connect(R["mcon"], R["met1"])
     l2n.connect(R["met1"], R["via"]); l2n.connect(R["via"], R["met2"])
+    l2n.connect(R["met2"], R["via2"]); l2n.connect(R["via2"], R["met3"])
 
     l2n.extract_netlist()
     nl = l2n.netlist()
@@ -118,10 +121,10 @@ def lvs_current_mirror(w: float = 1.0, l: float = 0.15) -> dict:
             "layout_netlist": layout_nl.to_s()}
 
 
-def lvs_ota(gds_out: str | None = None) -> dict:
+def lvs_ota(gds_out: str | None = None, with_cap: bool = False) -> dict:
     """Full two-stage OTA: transistor-level P&R, extract, and LVS vs schematic."""
     from .ota_layout import build_ota, PORTS
-    ly, top, schem_devs = build_ota()
+    ly, top, schem_devs, cap_fF = build_ota(with_cap=with_cap)
     if gds_out:
         ly.write(gds_out)
     layout_nl, _l2n = extract_netlist(ly, top)
@@ -129,6 +132,8 @@ def lvs_ota(gds_out: str | None = None) -> dict:
     match = compare(layout_nl, schem)
     return {"tool": "KLayout LVS (DeviceExtractorMOS3 + NetlistComparer)",
             "cell": "OTA", "match": match,
-            "note": "7 MOSFETs (Cc omitted from MOS LVS); uniform W/L",
+            "note": "7 MOSFETs, per-device real sizing (multi-finger), met1/2/3 DRC-clean",
+            "capCc_fF": cap_fF,
+            "perDeviceW": {d["name"]: d["W"] for d in schem_devs},
             "devices": device_summary(layout_nl),
             "layout_netlist": layout_nl.to_s()}
