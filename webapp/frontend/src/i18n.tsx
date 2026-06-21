@@ -29,8 +29,8 @@ const S: Record<string, { en: string; ko: string }> = {
   "lay.mirror": { en: "Current mirror", ko: "전류 미러" },
   "lay.diffpair": { en: "Diff pair (common-centroid)", ko: "차동쌍 (공통중심)" },
   "lay.diffpair.note": {
-    en: "Input pair M1/M2 laid ABBA so both share one centroid — a linear process gradient cancels (mismatch 0 vs 0.5 segregated). Framed by a p+ guard ring. LVS-clean: 4 fingers → 2 matched nmos.",
-    ko: "입력쌍 M1/M2를 ABBA로 배치해 공통중심 공유 — 선형 공정 구배가 상쇄(부정합 0 vs 분리배치 0.5). p+ 가드링으로 둘러쌈. LVS 일치: 핑거 4개 → 매칭된 nmos 2개.",
+    en: "Input pair M1/M2 laid ABBA so both share one centroid — a linear process gradient cancels (mismatch 0 vs 0.5 segregated). 2 dummy fingers per side equalize the STI/LOD edge environment (LOD mismatch 20.9→0.6 mV), all framed by a p+ guard ring. LVS-clean: 8 fingers → 2 matched + 1 dummy nmos.",
+    ko: "입력쌍 M1/M2를 ABBA로 배치해 공통중심 공유 — 선형 공정 구배 상쇄(부정합 0 vs 분리배치 0.5). 양옆 더미 핑거 2개가 STI/LOD 가장자리 환경을 균등화(LOD 부정합 20.9→0.6 mV), p+ 가드링으로 둘러쌈. LVS 일치: 핑거 8개 → 매칭 nmos 2 + 더미 1.",
   },
   "lay.note": {
     en: "The actual transistor-level GDS rendered in the browser — diffusion / poly / contacts / li1 / met1-2-3 on SKY130 layers, with net labels. Toggle layers in the legend. This is the same geometry KLayout DRCs and LVSes.",
@@ -63,6 +63,7 @@ const S: Record<string, { en: string; ko: string }> = {
   "flow.gds": { en: "Export GDS", ko: "GDS 내보내기" },
   "flow.kdrc": { en: "Real DRC (KLayout)", ko: "실제 DRC (KLayout)" },
   "flow.lvs": { en: "Transistor LVS (KLayout)", ko: "트랜지스터 LVS (KLayout)" },
+  "flow.phys": { en: "Antenna + EM", ko: "안테나 + EM" },
   "flow.analog": { en: "Analog-aware placement", ko: "아날로그 인식 배치" },
   "flow.match.sym": { en: "symmetry penalty", ko: "대칭 페널티" },
   "flow.match.crit": { en: "critical-net WL (n1/n2)", ko: "핵심넷 WL (n1/n2)" },
