@@ -23,6 +23,17 @@ def test_e2e_flow_is_analog_aware():
     assert r["analogAware"] is True
 
 
+def test_analog_aware_stays_routable():
+    # Symmetric/abutted analog placement must not strangle pin access: the
+    # sign-off pass rate over a deterministic seed set has to stay at least
+    # as good as the plain-HPWL baseline (5/8 when this test was written).
+    passes = sum(
+        run_flow(place="sa", seed=s, analog_aware=True)["signoff"]["verdict"]
+        == "PASS"
+        for s in range(8))
+    assert passes >= 5, f"only {passes}/8 seeds pass sign-off"
+
+
 def test_critical_aware_pnr_improves_postlayout_pm():
     # The observable that matters: post-layout PM (dominated by the n2 pole)
     # must not get worse when placement/routing favours the critical nets.

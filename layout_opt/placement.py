@@ -144,7 +144,7 @@ def random_place(sch: Schematic = None, seed: int = 0) -> dict[str, tuple[int, i
 
 
 def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000,
-             analog_aware: bool = False, w_crit: float = 4.0,
+             analog_aware: bool = False, w_crit: float = 12.0,
              w_sym: float = 6.0) -> dict[str, tuple[int, int]]:
     """Simulated-annealing placement minimizing HPWL + overlap penalty.
 
@@ -160,7 +160,11 @@ def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000,
     OV = 50
 
     def cost(p):
-        c = hpwl(sch, p) + OV * _overlap(p, wh, CORE_NAMES)
+        # analog_aware pulls devices together (symmetry/critical nets), which
+        # starves the router of channels: demand one extra free cell between
+        # devices (margin=2) so every net keeps a routing path.
+        c = hpwl(sch, p) + OV * _overlap(p, wh, CORE_NAMES,
+                                         margin=2 if analog_aware else 1)
         if analog_aware:
             c += w_crit * crit_hpwl(sch, p) + w_sym * symmetry_penalty(p, wh)
         return c
