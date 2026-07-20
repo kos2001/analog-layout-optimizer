@@ -25,6 +25,48 @@ def _stage(name: str, status: str, detail: str) -> dict:
     return {"name": name, "status": status, "detail": detail}
 
 
+def rank_candidates(results: list[dict]) -> int:
+    """Index of the best full-flow run by sign-off ranking.
+
+    Order: PASS verdict > fewest unrouted nets > LVS clean > fewest DRC
+    errors/warnings > highest post-layout phase margin. This replaces
+    "pick a random seed and hope" with a deterministic best-of-N choice.
+    """
+    def key(r: dict):
+        so, rt, pl = r["signoff"], r["routing"], r["postlayout"]
+        return (
+            0 if r["verdict"] == "PASS" else 1,
+            len(rt["failed"]),
+            0 if so["lvs"]["clean"] else 1,
+            so["drcErrors"],
+            so.get("drcWarnings", 0),
+            -pl["post"]["pm_deg"],
+        )
+    return min(range(len(results)), key=lambda i: key(results[i]))
+
+
+def run_best_of(place: str = "sa", seeds=(0, 1, 2, 3), sky130: bool = False,
+                maxiter: int = 90, runner=None) -> dict:
+    """Run the full flow across several seeds and return the best by sign-off.
+
+    `runner(place, seed, sky130, maxiter)` is injectable for tests.
+    """
+    run = runner or (lambda place, seed, sky130, maxiter:
+                     run_end_to_end(place=place, seed=seed, sky130=sky130,
+                                    maxiter=maxiter))
+    seeds = list(seeds)
+    results = [run(place=place, seed=s, sky130=sky130, maxiter=maxiter)
+               for s in seeds]
+    best = rank_candidates(results)
+    out = results[best]
+    out["sweep"] = {
+        "seeds": seeds,
+        "bestSeed": seeds[best],
+        "verdicts": [r["verdict"] for r in results],
+    }
+    return out
+
+
 def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
                    maxiter: int = 90) -> dict:
     stages = []
