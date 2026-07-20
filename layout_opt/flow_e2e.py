@@ -81,7 +81,9 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
         f"{s.power*1e3:.3f} mW" + ("" if d.feasible else " · specs not met")))
 
     # 2-6. schematic → placement → routing → sign-off → post-layout (sized).
-    flow = run_flow(place=place, seed=seed, sizing=d.params)
+    # analog_aware: matched-pair symmetry + short high-impedance (n1/n2) nets,
+    # and PM-critical nets (n2/VOUT) are routed first.
+    flow = run_flow(place=place, seed=seed, sizing=d.params, analog_aware=True)
     sch = two_stage_ota()
 
     stages.append(_stage("Schematic", "info",
