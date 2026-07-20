@@ -71,8 +71,9 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
                    maxiter: int = 90) -> dict:
     stages = []
 
-    # 1. Sizing — minimize power s.t. gain/GBW/PM/slew specs (DE in log space).
-    d = de_log_refine(seed=seed, maxiter=maxiter)
+    # 1. Sizing — minimize power s.t. gain/GBW/PM/slew specs (DE in log space),
+    # with a parasitic guard-band so post-layout PM/GBW still meet nominal.
+    d = de_log_refine(seed=seed, maxiter=maxiter, guardband=True)
     s = evaluate_opamp(d.params)
     stages.append(_stage(
         "Sizing (DE)", "pass" if d.feasible else "fail",
