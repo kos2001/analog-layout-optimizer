@@ -19,7 +19,12 @@ the real PDK, post-layout parasitics, etc.) is intentionally *not* modeled here.
 from .geometry import Rect, Layout
 from .generator import DiffPairConfig, DesignParams, generate_layout, PDKRules
 from .evaluate import evaluate, EvalResult, make_objective
-from .skill import emit_skill
+try:
+    # emit_skill needs virtuoso_bridge (Cadence SKILL layout ops); keep it
+    # OPTIONAL so the offline algorithms import and run without the Arcadia bridge
+    from .skill import emit_skill
+except Exception:  # pragma: no cover - optional Cadence-side dependency
+    emit_skill = None
 
 __all__ = [
     "Rect",
