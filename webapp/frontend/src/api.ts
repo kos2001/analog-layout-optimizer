@@ -177,8 +177,8 @@ export const fetchFlow = (place: "sa" | "random", seed = 0, analog = false) =>
 
 import type { FullFlowData } from "./types";
 
-export const fetchFullFlow = (place: "sa" | "random", seed = 0, sky130 = false) =>
-  fetch(`/api/full-flow?place=${place}&seed=${seed}&sky130=${sky130}`)
+export const fetchFullFlow = (place: "sa" | "random", seed = 0, sky130 = false, sweep = 0) =>
+  fetch(`/api/full-flow?place=${place}&seed=${seed}&sky130=${sky130}&sweep=${sweep}`)
     .then((r) => r.json() as Promise<FullFlowData>);
 
 import type { GdsExport } from "./types";

@@ -338,6 +338,7 @@ export interface FullFlowData extends FlowData {
   verdict: string;
   sizing: FlowSizing;
   silicon: FlowSilicon | null;
+  sweep?: { seeds: number[]; bestSeed: number; verdicts: string[] };
 }
 
 // --- T-coil ---

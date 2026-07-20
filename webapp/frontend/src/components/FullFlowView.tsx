@@ -42,8 +42,9 @@ export default function FullFlowView() {
   const run = async () => {
     setBusy(true); setErr(null);
     try {
-      const seed = Math.floor(Math.random() * 1e6);
-      setData(await fetchFullFlow("sa", seed, sky130));
+      // Deterministic best-of-N sweep: the backend ranks seeds by sign-off
+      // (LVS clean, all nets routed, DRC, post-layout PM) and returns the best.
+      setData(await fetchFullFlow("sa", 0, sky130, 4));
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   };
 
@@ -77,6 +78,7 @@ export default function FullFlowView() {
               <span style={{ fontSize: 13, color: "var(--muted)" }}>
                 {data.sizing.power_mw} mW · GBW {data.sizing.gbw_mhz} MHz · gain {data.sizing.gain_db} dB ·
                 HPWL {data.hpwl} · WL {data.routing.totalWirelength}
+                {data.sweep && ` · best seed ${data.sweep.bestSeed}/${data.sweep.seeds.length} (${data.sweep.verdicts.filter(v => v === "PASS").length} PASS)`}
               </span>
             </div>
 

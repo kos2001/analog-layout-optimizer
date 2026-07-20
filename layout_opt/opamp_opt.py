@@ -36,6 +36,15 @@ VOV_MAX = 0.40         # V (headroom)
 
 POWER_SCALE = 1e-3     # report/compare power in mW
 
+# Parasitic guard-band: post-layout routing adds capacitance on the internal
+# node n2 and on VOUT, and the n2 pole p_n2 = 1/(r1*C_n2) collapses PM when
+# power-minimal sizing makes r1 huge. Guard-banded sizing therefore constrains
+# the *estimated post-layout* PM (with typical extracted caps, measured ~8 fF
+# on n2 / ~13 fF on VOUT for this flow) instead of just raising the nominal
+# PM target, which the analytic model cannot see.
+C_N2_EST_F = 10e-15
+C_OUT_EST_F = 20e-15
+
 
 @dataclass
 class Design:
@@ -50,16 +59,17 @@ class Design:
         return evaluate_opamp(self.params)
 
 
-def _violation_from_specs(s, p: OpAmpParams) -> float:
+def _violation_from_specs(s, p: OpAmpParams, *, gbw_min: float = GBW_MIN,
+                          pm_min: float = PM_MIN) -> float:
     """Total normalized spec shortfall for an already-evaluated spec set.
 
     Shared by the analytical and the Spectre-backed objectives so both enforce
-    exactly the same constraints.
+    exactly the same constraints. `gbw_min`/`pm_min` allow guard-banded targets.
     """
     v = 0.0
     v += max(0.0, (GAIN_MIN - s.gain_db) / GAIN_MIN)
-    v += max(0.0, (GBW_MIN - s.gbw_hz) / GBW_MIN)
-    v += max(0.0, (PM_MIN - s.pm_deg) / PM_MIN)
+    v += max(0.0, (gbw_min - s.gbw_hz) / gbw_min)
+    v += max(0.0, (pm_min - s.pm_deg) / pm_min)
     v += max(0.0, (SLEW_MIN - s.slew) / SLEW_MIN)
     for vov in (s.vov1, s.vov3, s.vov5, s.vov6, s.vov7):
         v += max(0.0, (VOV_MIN - vov) / VOV_MIN)
@@ -67,23 +77,27 @@ def _violation_from_specs(s, p: OpAmpParams) -> float:
     return v
 
 
-def _violation(p: OpAmpParams) -> float:
+def _violation(p: OpAmpParams, *, gbw_min: float = GBW_MIN,
+               pm_min: float = PM_MIN) -> float:
     """Total normalized spec shortfall (analytical model); 0 means feasible."""
-    return _violation_from_specs(evaluate_opamp(p), p)
+    return _violation_from_specs(evaluate_opamp(p), p,
+                                 gbw_min=gbw_min, pm_min=pm_min)
 
 
-def _objective(p: OpAmpParams, feas_weight: float = 1e3) -> float:
+def _objective(p: OpAmpParams, feas_weight: float = 1e3, *,
+               gbw_min: float = GBW_MIN, pm_min: float = PM_MIN) -> float:
     """Feasibility-first: big penalty * violation, then power (mW) when feasible."""
-    v = _violation(p)
+    v = _violation(p, gbw_min=gbw_min, pm_min=pm_min)
     pw = evaluate_opamp(p).power / POWER_SCALE
     if v > 0:
         return feas_weight * v + 10.0   # keep infeasible strictly worse than any feasible
     return pw
 
 
-def _design_from_x(x, nfev) -> Design:
+def _design_from_x(x, nfev, *, gbw_min: float = GBW_MIN,
+                   pm_min: float = PM_MIN) -> Design:
     p = OpAmpParams.from_vector(x)
-    v = _violation(p)
+    v = _violation(p, gbw_min=gbw_min, pm_min=pm_min)
     return Design(
         params=p,
         power_mw=evaluate_opamp(p).power / POWER_SCALE,
@@ -122,24 +136,86 @@ def de_log(seed=0, maxiter=120) -> Design:
     return _design_from_x(_from_log(res.x), res.nfev)
 
 
-def de_log_refine(seed=0, maxiter=120) -> Design:
-    """de_log, then a local SLSQP polish in log-space from the DE optimum."""
+def _guardband_violation(p: OpAmpParams) -> float:
+    """Estimated post-layout PM shortfall (routing caps on n2 / VOUT applied)."""
+    from .parasitics import post_layout_specs
+    post = post_layout_specs(p, C_OUT_EST_F, C_N2_EST_F)
+    return max(0.0, (PM_MIN - post["pm_deg"]) / PM_MIN)
+
+
+def de_log_refine(seed=0, maxiter=120, guardband: bool = False, *,
+                  gbw_min: float = GBW_MIN, pm_min: float = PM_MIN) -> Design:
+    """de_log, then a local SLSQP polish in log-space from the DE optimum.
+
+    `guardband=True` additionally requires the *estimated post-layout* PM
+    (typical extracted routing caps applied) to meet PM_MIN, so the sizing
+    survives parasitic extraction instead of collapsing on the n2 pole.
+    `gbw_min`/`pm_min` override the nominal targets (e.g. ngspice-calibrated).
+    """
+    def obj(xl):
+        p = OpAmpParams.from_vector(_from_log(xl))
+        v = _violation(p, gbw_min=gbw_min, pm_min=pm_min)
+        if guardband:
+            v += _guardband_violation(p)
+        pw = evaluate_opamp(p).power / POWER_SCALE
+        return 1e3 * v + 10.0 if v > 0 else pw
+
     res = differential_evolution(
-        lambda xl: _objective(OpAmpParams.from_vector(_from_log(xl))),
-        bounds=list(zip(_LOG_LO, _LOG_HI)), seed=seed, maxiter=maxiter,
+        obj, bounds=list(zip(_LOG_LO, _LOG_HI)), seed=seed, maxiter=maxiter,
         tol=1e-9, polish=False, updating="deferred",
     )
     nfev = int(res.nfev)
     x0 = res.x
     loc = minimize(
-        lambda xl: _objective(OpAmpParams.from_vector(_from_log(xl))),
-        x0, method="SLSQP", bounds=list(zip(_LOG_LO, _LOG_HI)),
+        obj, x0, method="SLSQP", bounds=list(zip(_LOG_LO, _LOG_HI)),
         options={"maxiter": 200, "ftol": 1e-10},
     )
     nfev += int(loc.nfev)
-    best = loc.x if _objective(OpAmpParams.from_vector(_from_log(loc.x))) <= \
-        _objective(OpAmpParams.from_vector(_from_log(x0))) else x0
-    return _design_from_x(_from_log(best), nfev)
+    best = loc.x if obj(loc.x) <= obj(x0) else x0
+    d = _design_from_x(_from_log(best), nfev, gbw_min=gbw_min, pm_min=pm_min)
+    if guardband and _guardband_violation(d.params) > 1e-9:
+        return Design(params=d.params, power_mw=d.power_mw,
+                      violation=d.violation + _guardband_violation(d.params),
+                      feasible=False, nfev=d.nfev)
+    return d
+
+
+def de_log_ngspice(seed=0, maxiter=120, model=None, rounds: int = 2,
+                   guardband: bool = False) -> dict:
+    """Simulation-calibrated sizing: DE on the analytic model, then correct
+    its optimism with real ngspice evaluations of the winner.
+
+    Each round evaluates the current best design with ngspice, measures the
+    analytic-vs-simulated GBW ratio and PM shift, tightens the analytic
+    targets accordingly (a one-point residual surrogate), and re-runs DE.
+    A handful of ngspice calls buys sim-accurate sizing without putting the
+    simulator inside the DE population loop.
+    """
+    from .ngspice_backend import GENERIC_NGSPICE, ngspice_evaluate
+    model = model or GENERIC_NGSPICE
+
+    gbw_min, pm_min = GBW_MIN, PM_MIN
+    d = sim = None
+    done = 0
+    for _ in range(max(rounds, 1)):
+        d = de_log_refine(seed=seed, maxiter=maxiter, guardband=guardband,
+                          gbw_min=gbw_min, pm_min=pm_min)
+        s_ana = evaluate_opamp(d.params)
+        sim = ngspice_evaluate(d.params, model)
+        done += 1
+        if sim.gbw_hz >= GBW_MIN and sim.pm_deg >= PM_MIN:
+            break
+        # Tighten analytic targets by the observed residual (only ever tighten).
+        k_gbw = max(sim.gbw_hz / max(s_ana.gbw_hz, 1.0), 1e-3)
+        pm_shift = sim.pm_deg - s_ana.pm_deg
+        gbw_min = max(gbw_min, GBW_MIN / min(k_gbw, 1.0))
+        pm_min = max(pm_min, PM_MIN - min(pm_shift, 0.0))
+    return {
+        "design": d,
+        "sim": sim,
+        "calibration": {"rounds": done, "gbw_min_hz": gbw_min,
+                        "pm_min_deg": pm_min, "model": model.name},
+    }
 
 
 def random_search(seed=0, n=15000) -> Design:

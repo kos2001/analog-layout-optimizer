@@ -42,6 +42,8 @@ class NgspiceModel:
     subckt: bool = False     # True: PDK devices are X-instance subckts (W/L in um)
     w_min: float = 0.0       # minimum device width (um), clamp for real PDKs
     temp: float = 27.0       # circuit temperature (deg C) for the sim
+    w_max: float = 0.0       # max total width per instance (um); 0 = unlimited
+    w_finger: float = 5.0    # target finger width (um) when splitting into nf
 
 
 # Generic square-law (level=1) models — mirror the analytical opamp constants
@@ -80,16 +82,28 @@ def sky130_model(corner: str = "tt", pdk_root: str | None = None,
         header=f'.lib "{sky130_lib_path(pdk_root)}" {corner}',
         nmos="sky130_fd_pr__nfet_01v8", pmos="sky130_fd_pr__pfet_01v8",
         l_um=l_um, vdd=1.8, cl_ff=cl_ff, subckt=True, w_min=0.42,
+        w_max=100.0,   # binned models reject total w > 100 um per instance
     )
 
 
 def _dev(model: NgspiceModel, idx: str, d: str, g: str, s: str, b: str,
          kind: str, w_um: float, l_um: float) -> str:
-    """One device line — primitive `m` (level-1) or PDK `X` subckt."""
+    """One device line — primitive `m` (level-1) or PDK `X` subckt.
+
+    Wide PDK devices are split into `m` parallel instances (total width per
+    instance <= w_max) and `nf` fingers (finger width near w_finger), because
+    the binned SKY130 models reject out-of-range geometries outright.
+    """
     name = model.nmos if kind == "n" else model.pmos
     if model.subckt:
         w = max(round(w_um, 4), model.w_min)
-        return f"x{idx} {d} {g} {s} {b} {name} l={round(l_um, 4)} w={w} nf=1"
+        mult = 1
+        if model.w_max and w > model.w_max:
+            mult = math.ceil(w / model.w_max)
+            w = round(w / mult, 4)
+        nf = max(1, math.ceil(w / model.w_finger))
+        return (f"x{idx} {d} {g} {s} {b} {name} "
+                f"l={round(l_um, 4)} w={w} nf={nf} m={mult}")
     return f"m{idx} {d} {g} {s} {b} {name} w={round(w_um, 4)}u l={round(l_um, 4)}u"
 
 

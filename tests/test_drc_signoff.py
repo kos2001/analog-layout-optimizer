@@ -29,8 +29,10 @@ def test_drc_detects_open():
 
 
 def test_drc_detects_via_spacing():
+    # Mechanism check with an explicit 2-cell rule (the default is 1: adjacent
+    # grid vias are legal for the 0.15 um cuts the GDS emitter now draws).
     nets = {"A": _net([[1, 1, 0], [1, 1, 1]]), "B": _net([[2, 1, 0], [2, 1, 1]])}
-    r = check_routing(nets, DRCRules(check_corner=False))
+    r = check_routing(nets, DRCRules(check_corner=False, min_via_spacing=2))
     assert r.counts["via_spacing"] >= 1
 
 
