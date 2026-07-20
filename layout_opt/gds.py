@@ -16,6 +16,13 @@ import gdstk
 
 PITCH_UM = 0.5                     # microns per routing-grid cell
 
+# SKY130-legal geometry per grid cell: tracks are narrower than the pitch so
+# neighbouring nets keep >= m1.2/m2.2 spacing (0.14), vias are the exact
+# via.1a cut size (0.15) with an enclosure pad on both metals (via.4/via.5).
+TRACK_UM = 0.23                    # routed wire width (>= 0.14 min width)
+VIA_UM = 0.15                      # via cut edge — rule via.1a exact size
+VIA_PAD_UM = 0.32                  # metal pad on both layers (0.085 enclosure)
+
 # (layer, datatype) — SKY130 stream numbers.
 MET = {0: (68, 20), 1: (69, 20)}   # routing layer index -> metal layer
 VIA = (68, 44)
@@ -48,17 +55,33 @@ def flow_to_gds(flow: dict, out_path: str, pitch: float = PITCH_UM) -> dict:
                             layer=TEXT[0], texttype=TEXT[1]))
         counts["device"] += 1
 
-    # Routed metal per net, per layer; vias where a net spans both layers.
+    # Routed metal per net, per layer: track-width segments between adjacent
+    # grid-cell centers (not full-pitch squares) so different nets keep the
+    # SKY130 min spacing by construction. Vias where a net spans both layers.
+    w = TRACK_UM
     for net, nr in flow["routing"]["nets"].items():
         if not nr.get("routed", True):
             continue
         by = _cells_by_layer(nr)
         for layer, cells in by.items():
             lay = MET.get(layer, MET[0])
+            have = set(cells)
             for (x, y) in cells:
-                top.add(gdstk.rectangle((x * p, y * p), ((x + 1) * p, (y + 1) * p),
+                cx, cy = (x + 0.5) * p, (y + 0.5) * p
+                # pad at the cell center keeps stub ends and via landings solid
+                top.add(gdstk.rectangle((cx - w / 2, cy - w / 2),
+                                        (cx + w / 2, cy + w / 2),
                                         layer=lay[0], datatype=lay[1]))
                 counts["metal"] += 1
+                # segment to the right / upper same-net neighbour
+                if (x + 1, y) in have:
+                    top.add(gdstk.rectangle((cx, cy - w / 2),
+                                            (cx + p, cy + w / 2),
+                                            layer=lay[0], datatype=lay[1]))
+                if (x, y + 1) in have:
+                    top.add(gdstk.rectangle((cx - w / 2, cy),
+                                            (cx + w / 2, cy + p),
+                                            layer=lay[0], datatype=lay[1]))
             # net-name label on the metal
             if cells:
                 cx, cy = cells[0]
@@ -72,9 +95,16 @@ def flow_to_gds(flow: dict, out_path: str, pitch: float = PITCH_UM) -> dict:
         for (x, y), ls in xy_layers.items():
             if len(ls) > 1:
                 vx, vy = (x + 0.5) * p, (y + 0.5) * p
-                top.add(gdstk.rectangle((vx - p * 0.2, vy - p * 0.2),
-                                        (vx + p * 0.2, vy + p * 0.2),
+                top.add(gdstk.rectangle((vx - VIA_UM / 2, vy - VIA_UM / 2),
+                                        (vx + VIA_UM / 2, vy + VIA_UM / 2),
                                         layer=VIA[0], datatype=VIA[1]))
+                # enclosure pad on both metal layers (rules via.4a / via.5a)
+                for li in sorted(ls):
+                    lay = MET.get(li, MET[0])
+                    top.add(gdstk.rectangle(
+                        (vx - VIA_PAD_UM / 2, vy - VIA_PAD_UM / 2),
+                        (vx + VIA_PAD_UM / 2, vy + VIA_PAD_UM / 2),
+                        layer=lay[0], datatype=lay[1]))
                 counts["via"] += 1
 
     lib.write_gds(out_path)

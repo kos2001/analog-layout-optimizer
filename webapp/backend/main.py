@@ -415,10 +415,18 @@ def get_flow(place: str = "sa", seed: int = 0, analog: bool = False) -> dict:
 
 
 @app.get("/api/full-flow")
-def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False) -> dict:
-    """One-click end-to-end: sizing -> P&R -> sign-off -> post-layout -> [silicon]."""
-    from layout_opt.flow_e2e import run_end_to_end
+def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False,
+                  sweep: int = 0) -> dict:
+    """One-click end-to-end: sizing -> P&R -> sign-off -> post-layout -> [silicon].
+
+    sweep>0 runs `sweep` seeds (seed..seed+sweep-1) and returns the best run
+    by sign-off ranking instead of gambling on a single seed.
+    """
+    from layout_opt.flow_e2e import run_best_of, run_end_to_end
     place = place if place in ("sa", "random") else "sa"
+    if sweep > 0:
+        seeds = range(seed, seed + min(sweep, 16))
+        return run_best_of(place=place, seeds=seeds, sky130=sky130)
     return run_end_to_end(place=place, seed=seed, sky130=sky130)
 
 

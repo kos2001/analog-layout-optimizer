@@ -60,6 +60,10 @@ def _wh(sch: Schematic) -> dict[str, tuple[int, int]]:
 # High-impedance gain nodes: parasitic C here costs the most phase margin
 # (post-layout), so keep their nets short.
 CRITICAL_NETS = {"n1", "n2"}
+
+# Nets routed before all others: the post-layout PM model keys on the n2 and
+# VOUT parasitics, so they get first claim on the short, low-via paths.
+ROUTE_PRIORITY = ("n2", "VOUT", "n1")
 # Matched device pairs that want a symmetric / abutted placement for matching
 # (random offsets between them => offset/CMRR and gain-error in a diff amp).
 MATCHED_PAIRS = [("M1", "M2"), ("M3", "M4")]
@@ -140,7 +144,7 @@ def random_place(sch: Schematic = None, seed: int = 0) -> dict[str, tuple[int, i
 
 
 def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000,
-             analog_aware: bool = False, w_crit: float = 4.0,
+             analog_aware: bool = False, w_crit: float = 12.0,
              w_sym: float = 6.0) -> dict[str, tuple[int, int]]:
     """Simulated-annealing placement minimizing HPWL + overlap penalty.
 
@@ -156,7 +160,11 @@ def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000,
     OV = 50
 
     def cost(p):
-        c = hpwl(sch, p) + OV * _overlap(p, wh, CORE_NAMES)
+        # analog_aware pulls devices together (symmetry/critical nets), which
+        # starves the router of channels: demand one extra free cell between
+        # devices (margin=2) so every net keeps a routing path.
+        c = hpwl(sch, p) + OV * _overlap(p, wh, CORE_NAMES,
+                                         margin=2 if analog_aware else 1)
         if analog_aware:
             c += w_crit * crit_hpwl(sch, p) + w_sym * symmetry_penalty(p, wh)
         return c
@@ -195,6 +203,9 @@ def _grid3_nets(comps: list[Component]):
             g.blocked.discard((px, py, 0))
             nets.setdefault(net, []).append((px, py, 0))
     nets = {n: ps for n, ps in nets.items() if len({(p[0], p[1]) for p in ps}) >= 2}
+    # PM-critical nets route first (dict order == routing order downstream).
+    rank = {n: i for i, n in enumerate(ROUTE_PRIORITY)}
+    nets = {n: nets[n] for n in sorted(nets, key=lambda n: rank.get(n, len(rank)))}
     return g, nets
 
 
