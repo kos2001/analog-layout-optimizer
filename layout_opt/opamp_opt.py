@@ -143,16 +143,18 @@ def _guardband_violation(p: OpAmpParams) -> float:
     return max(0.0, (PM_MIN - post["pm_deg"]) / PM_MIN)
 
 
-def de_log_refine(seed=0, maxiter=120, guardband: bool = False) -> Design:
+def de_log_refine(seed=0, maxiter=120, guardband: bool = False, *,
+                  gbw_min: float = GBW_MIN, pm_min: float = PM_MIN) -> Design:
     """de_log, then a local SLSQP polish in log-space from the DE optimum.
 
     `guardband=True` additionally requires the *estimated post-layout* PM
     (typical extracted routing caps applied) to meet PM_MIN, so the sizing
     survives parasitic extraction instead of collapsing on the n2 pole.
+    `gbw_min`/`pm_min` override the nominal targets (e.g. ngspice-calibrated).
     """
     def obj(xl):
         p = OpAmpParams.from_vector(_from_log(xl))
-        v = _violation(p)
+        v = _violation(p, gbw_min=gbw_min, pm_min=pm_min)
         if guardband:
             v += _guardband_violation(p)
         pw = evaluate_opamp(p).power / POWER_SCALE
@@ -170,12 +172,50 @@ def de_log_refine(seed=0, maxiter=120, guardband: bool = False) -> Design:
     )
     nfev += int(loc.nfev)
     best = loc.x if obj(loc.x) <= obj(x0) else x0
-    d = _design_from_x(_from_log(best), nfev)
+    d = _design_from_x(_from_log(best), nfev, gbw_min=gbw_min, pm_min=pm_min)
     if guardband and _guardband_violation(d.params) > 1e-9:
         return Design(params=d.params, power_mw=d.power_mw,
                       violation=d.violation + _guardband_violation(d.params),
                       feasible=False, nfev=d.nfev)
     return d
+
+
+def de_log_ngspice(seed=0, maxiter=120, model=None, rounds: int = 2,
+                   guardband: bool = False) -> dict:
+    """Simulation-calibrated sizing: DE on the analytic model, then correct
+    its optimism with real ngspice evaluations of the winner.
+
+    Each round evaluates the current best design with ngspice, measures the
+    analytic-vs-simulated GBW ratio and PM shift, tightens the analytic
+    targets accordingly (a one-point residual surrogate), and re-runs DE.
+    A handful of ngspice calls buys sim-accurate sizing without putting the
+    simulator inside the DE population loop.
+    """
+    from .ngspice_backend import GENERIC_NGSPICE, ngspice_evaluate
+    model = model or GENERIC_NGSPICE
+
+    gbw_min, pm_min = GBW_MIN, PM_MIN
+    d = sim = None
+    done = 0
+    for _ in range(max(rounds, 1)):
+        d = de_log_refine(seed=seed, maxiter=maxiter, guardband=guardband,
+                          gbw_min=gbw_min, pm_min=pm_min)
+        s_ana = evaluate_opamp(d.params)
+        sim = ngspice_evaluate(d.params, model)
+        done += 1
+        if sim.gbw_hz >= GBW_MIN and sim.pm_deg >= PM_MIN:
+            break
+        # Tighten analytic targets by the observed residual (only ever tighten).
+        k_gbw = max(sim.gbw_hz / max(s_ana.gbw_hz, 1.0), 1e-3)
+        pm_shift = sim.pm_deg - s_ana.pm_deg
+        gbw_min = max(gbw_min, GBW_MIN / min(k_gbw, 1.0))
+        pm_min = max(pm_min, PM_MIN - min(pm_shift, 0.0))
+    return {
+        "design": d,
+        "sim": sim,
+        "calibration": {"rounds": done, "gbw_min_hz": gbw_min,
+                        "pm_min_deg": pm_min, "model": model.name},
+    }
 
 
 def random_search(seed=0, n=15000) -> Design:
