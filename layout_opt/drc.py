@@ -29,7 +29,12 @@ _DIAG = ((1, 1), (1, -1), (-1, 1), (-1, -1))
 class DRCRules:
     min_spacing_tracks: int = 0       # >=1 flags orthogonally-adjacent diff nets
     check_corner: bool = True         # diagonal corner clearance
-    min_via_spacing: int = 2          # Chebyshev distance required between diff-net vias
+    # Chebyshev distance required between diff-net vias. Default 1: with the
+    # legalized GDS geometry (0.15 um cuts on the 0.5 um grid) vias in
+    # adjacent cells keep 0.35 um clear vs the 0.17 um via.2 rule — the full
+    # SKY130 KLayout deck confirms 0 violations — so only same-cell vias are
+    # physical errors.
+    min_via_spacing: int = 1
     check_via: bool = True
 
 
