@@ -19,6 +19,7 @@ from .schematic import _KIND, CORE_NAMES, PORT_NAMES, Schematic, two_stage_ota
 from . import drc as _drc
 from . import signoff as _signoff
 from . import parasitics as _par
+from .runlog import stage
 
 W, H = 52, 36                      # placement / routing grid (cells)
 
@@ -279,10 +280,12 @@ def run_flow(place: str = "sa", seed: int = 0, sizing=None,
     `analog_aware` turns on op-amp placement objectives (matching + critical-net).
     """
     sch = two_stage_ota()
-    pos = (sa_place(sch, seed, analog_aware=analog_aware) if place == "sa"
-           else random_place(sch, seed))
+    with stage("placement"):
+        pos = (sa_place(sch, seed, analog_aware=analog_aware) if place == "sa"
+               else random_place(sch, seed))
     comps = sch.to_components(pos)
-    routing = route_placement(comps)
+    with stage("routing"):
+        routing = route_placement(comps)
     netlist = {net: [f"{d}.{t}" for d, t in conns]
                for net, conns in sch.nets().items()}
     # Per-terminal pin list (device terminal + its net + layout cell) for LVS.
@@ -290,7 +293,12 @@ def run_flow(place: str = "sa", seed: int = 0, sizing=None,
     for c in comps:
         for i, (net, cell) in enumerate(c.abs_pins()):
             lvs_pins.append({"id": f"{c.id}.{net}#{i}", "net": net, "cell": list(cell)})
-    signoff = _signoff.run_signoff(lvs_pins, routing)
+    with stage("signoff"):
+        signoff = _signoff.run_signoff(lvs_pins, routing)
+    with stage("postlayout"):
+        postlayout = (_par.post_layout_from_routing(routing, p=sizing)
+                      if sizing is not None
+                      else _par.post_layout_from_routing(routing))
     return {
         "width": W, "height": H, "layers": 2, "place": place,
         "hpwl": hpwl(sch, pos),
@@ -301,9 +309,7 @@ def run_flow(place: str = "sa", seed: int = 0, sizing=None,
                        for c in comps],
         "routing": routing,
         "signoff": signoff,
-        "postlayout": _par.post_layout_from_routing(
-            routing, p=sizing) if sizing is not None
-        else _par.post_layout_from_routing(routing),
+        "postlayout": postlayout,
         "matching": matching_metrics(sch, pos),
         "analogAware": analog_aware,
     }
