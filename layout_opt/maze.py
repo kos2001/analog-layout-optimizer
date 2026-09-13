@@ -54,6 +54,7 @@ def astar(
     targets: set[Cell],
     blocked: set[Cell],
     cell_cost=None,
+    passable: set[Cell] = frozenset(),
 ) -> list[Cell] | None:
     """Shortest rectilinear path from any source to any target avoiding blocked.
 
@@ -64,17 +65,31 @@ def astar(
     step + bend penalty. It must be >= 0 (so the Manhattan heuristic stays
     admissible); this is what lets a congestion-negotiating router *share*
     cells at a price instead of treating every other net as a hard wall.
+
+    ``passable`` cells are exempt from ``blocked`` (e.g. the net's own tree),
+    which avoids materializing ``blocked - passable`` on every call.
     """
     if not sources or not targets:
         return None
     tset = set(targets)
+    W, H = grid.width, grid.height
+    push, pop = heapq.heappush, heapq.heappop
+    inf = float("inf")
+    if len(tset) == 1:
+        (tx0, ty0), = tset
+
+        def hfun(x, y):
+            return abs(x - tx0) + abs(y - ty0)
+    else:
+        def hfun(x, y):
+            return _manhattan_to_nearest((x, y), tset)
+
     # Priority queue of (f, g, cell, dir_index, parent_key)
     start_items = []
     for s in sources:
-        if s in blocked and s not in tset:
+        if s in blocked and s not in tset and s not in passable:
             continue
-        h = _manhattan_to_nearest(s, tset)
-        start_items.append((h, 0.0, s, -1))
+        start_items.append((hfun(s[0], s[1]), 0.0, s, -1))
     if not start_items:
         return None
 
@@ -85,10 +100,10 @@ def astar(
         key = (s, d)
         best_g[key] = g
         came_from[key] = None
-        heapq.heappush(open_heap, (h, g, s, d))
+        push(open_heap, (h, g, s, d))
 
     while open_heap:
-        f, g, cell, d = heapq.heappop(open_heap)
+        f, g, cell, d = pop(open_heap)
         if cell in tset:
             # Reconstruct.
             path = [cell]
@@ -99,25 +114,25 @@ def astar(
                 key = (pcell, pdir)
             path.reverse()
             return path
-        if g > best_g.get((cell, d), float("inf")):
+        if g > best_g.get((cell, d), inf):
             continue
         x, y = cell
         for di, (dx, dy) in enumerate(_DIRS):
-            nxt = (x + dx, y + dy)
-            if not grid.in_bounds(nxt):
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < W and 0 <= ny < H):
                 continue
-            if nxt in blocked and nxt not in tset:
+            nxt = (nx, ny)
+            if nxt in blocked and nxt not in tset and nxt not in passable:
                 continue
             step = 1.0 + (BEND_PENALTY if (d != -1 and di != d) else 0.0)
             if cell_cost is not None:
                 step += cell_cost(nxt)
             ng = g + step
             nkey = (nxt, di)
-            if ng < best_g.get(nkey, float("inf")):
+            if ng < best_g.get(nkey, inf):
                 best_g[nkey] = ng
                 came_from[nkey] = (cell, d)
-                nh = _manhattan_to_nearest(nxt, tset)
-                heapq.heappush(open_heap, (ng + nh, ng, nxt, di))
+                push(open_heap, (ng + hfun(nx, ny), ng, nxt, di))
     return None
 
 
@@ -159,8 +174,7 @@ def route_net(grid: Grid, pins: list[Cell], blocked: set[Cell]) -> NetRoute:
         remaining.sort(key=lambda p: _manhattan_to_nearest(p, tree))
         pin = remaining.pop(0)
         # Other nets' wires block us, but our own tree is routable.
-        eff_blocked = blocked - tree
-        path = astar(grid, set(tree), {pin}, eff_blocked)
+        path = astar(grid, tree, {pin}, blocked, passable=tree)
         if path is None:
             nr.routed = False
             return nr
@@ -289,8 +303,8 @@ def _route_net_costed(grid: Grid, pins: list[Cell], hard_blocked: set[Cell],
     while remaining:
         remaining.sort(key=lambda p: _manhattan_to_nearest(p, tree))
         pin = remaining.pop(0)
-        eff_blocked = hard_blocked - tree
-        path = astar(grid, set(tree), {pin}, eff_blocked, cell_cost=cell_cost)
+        path = astar(grid, tree, {pin}, hard_blocked, cell_cost=cell_cost,
+                     passable=tree)
         if path is None:
             nr.routed = False
             return nr

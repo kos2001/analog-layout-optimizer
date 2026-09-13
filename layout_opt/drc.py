@@ -98,7 +98,9 @@ def check_routing(nets: dict, rules: DRCRules = DRCRules(), max_report: int = 30
     seen_pairs: set = set()
     for c, ns in occ.items():
         x, y, l = c
-        net_c = next(iter(ns))
+        # min(), not next(iter()): on a shorted cell the set order of net names
+        # depends on PYTHONHASHSEED, which made DRC counts vary between runs.
+        net_c = min(ns)
         if rules.min_spacing_tracks >= 1:
             for dx, dy in _ORTHO:
                 n = (x + dx, y + dy, l)
@@ -135,9 +137,19 @@ def check_routing(nets: dict, rules: DRCRules = DRCRules(), max_report: int = 30
     if rules.check_via:
         vias = {net: _vias(cs) for net, cs in cellsets.items()}
         items = [(net, xy) for net, xys in vias.items() for xy in xys]
+        # Spatial hash with bucket size = rule distance: only vias in the 3x3
+        # neighbouring buckets can violate, so this is ~O(V) instead of O(V^2).
+        # Candidates are visited in the same (i, j) order as a full pairwise scan.
+        s = max(1, rules.min_via_spacing)
+        buckets: dict[tuple[int, int], list[int]] = {}
+        for idx, (_, (x, y)) in enumerate(items):
+            buckets.setdefault((x // s, y // s), []).append(idx)
         for i in range(len(items)):
             ni, (xi, yi) = items[i]
-            for j in range(i + 1, len(items)):
+            bx, by = xi // s, yi // s
+            near = sorted(j for ox in (-1, 0, 1) for oy in (-1, 0, 1)
+                          for j in buckets.get((bx + ox, by + oy), ()) if j > i)
+            for j in near:
                 nj, (xj, yj) = items[j]
                 if ni == nj:
                     continue
