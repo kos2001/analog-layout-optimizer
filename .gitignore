@@ -15,3 +15,6 @@ dist/
 .playwright-mcp/
 *.log
 .DS_Store
+
+# Batch-mode run directories (python -m layout_opt flow)
+runs/
