@@ -96,6 +96,50 @@ cd webapp/frontend && npm install && npm run dev      # http://localhost:5173
 
 `/api/full-flow?place=sa&seed=1&sky130=false` returns the staged report headless.
 
+### Batch mode (`python -m layout_opt flow`)
+
+The same flow runs headless the way a commercial P&R / sign-off tool runs in a
+regression farm: a JSON config (plus CLI overrides) in, a self-contained run
+directory out, and an exit status that gates CI.
+
+```bash
+python -m layout_opt defaults > flow.json          # starting config
+python -m layout_opt flow -f flow.json -o runs/ota_tt
+python -m layout_opt flow --seeds 0,1,2,3 --klayout-drc -o runs/ota_sweep
+```
+
+```
+runs/ota_tt/
+  flow.json            effective config + revision/python/platform (reproducibility)
+  logs/run.log         timestamped log with message IDs (ALO-001 … ALO-900)
+  reports/qor.rpt      verdict, stage table, per-stage wall / CPU / peak RSS
+  reports/{sizing,placement,route,drc,lvs,postlayout}.rpt
+  outputs/design.json  full flow database (same payload as /api/full-flow)
+  outputs/two_stage_ota.gds
+```
+
+Exit status: `0` sign-off PASS, `1` FAIL (including a dirty `--klayout-drc`),
+`2` bad configuration or internal error. Stage timing comes from
+`layout_opt/runlog.py`; `with stage("name"):` is a no-op outside a batch run.
+
+### Engine performance
+
+`scripts/bench_engines.py` times the router, DRC and placer on synthetic designs
+of increasing size (`--quick`, `--json out.json`). Kernel speedups are required to
+be result-preserving — `tests/test_engine_perf.py` checks them against reference
+implementations. Measured on the same machine before → after the optimization pass:
+
+| Case | Before | After |
+|---|---|---|
+| Negotiated route, 80×80×2 grid, 60 nets | 24.1 s | 11.1 s |
+| DRC via spacing, 10 000 vias | 5.6 s | 0.04 s |
+| SA placement, 20 000 iterations | 0.86 s | 0.15 s |
+| `run_flow` (OTA place → route → sign-off) | 0.18 s | 0.06 s |
+
+Known limit: on congested grids ≥ 120×120 with 120+ nets the negotiated router
+does not converge within its iteration budget and falls back to sequential
+routing (minutes, with opens) — the next scaling target.
+
 ### Routing algorithms — is A\* enough?
 
 `scenarios.py` + `mlroute.py` answer this with running comparisons. A\* is optimal

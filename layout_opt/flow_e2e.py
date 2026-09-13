@@ -15,6 +15,7 @@ from .opamp import evaluate_opamp
 from .opamp_opt import de_log_refine
 from .placement import run_flow
 from .schematic import two_stage_ota
+from .runlog import stage
 from .ngspice_backend import (
     GENERIC_NGSPICE, NgspiceUnavailable, ngspice_available, ngspice_evaluate,
     sky130_model, sky130_available,
@@ -73,8 +74,9 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
 
     # 1. Sizing — minimize power s.t. gain/GBW/PM/slew specs (DE in log space),
     # with a parasitic guard-band so post-layout PM/GBW still meet nominal.
-    d = de_log_refine(seed=seed, maxiter=maxiter, guardband=True)
-    s = evaluate_opamp(d.params)
+    with stage("sizing"):
+        d = de_log_refine(seed=seed, maxiter=maxiter, guardband=True)
+        s = evaluate_opamp(d.params)
     stages.append(_stage(
         "Sizing (DE)", "pass" if d.feasible else "fail",
         f"gain {s.gain_db:.1f} dB · GBW {s.gbw_hz/1e6:.1f} MHz · PM {s.pm_deg:.0f}° · "
@@ -114,7 +116,8 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
     if sky130:
         if sky130_available():
             try:
-                ss = ngspice_evaluate(d.params, sky130_model())
+                with stage("silicon"):
+                    ss = ngspice_evaluate(d.params, sky130_model())
                 silicon = {"model": "sky130-tt", "gain_db": round(ss.gain_db, 2),
                            "gbw_mhz": round(ss.gbw_hz / 1e6, 2), "pm_deg": round(ss.pm_deg, 1)}
                 stages.append(_stage("Silicon verify (SKY130)", "pass",
