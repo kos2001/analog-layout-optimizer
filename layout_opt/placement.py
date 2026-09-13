@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from .interactive import Component
 from .mlroute import Grid3, negotiated_route3
-from .schematic import CORE_NAMES, PORT_NAMES, Schematic, two_stage_ota
+from .schematic import _KIND, CORE_NAMES, PORT_NAMES, Schematic, two_stage_ota
 from . import drc as _drc
 from . import signoff as _signoff
 from . import parasitics as _par
@@ -158,18 +158,53 @@ def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000,
     wh = _wh(sch)
     pos = random_place(sch, seed)
     OV = 50
+    # analog_aware pulls devices together (symmetry/critical nets), which
+    # starves the router of channels: demand one extra free cell between
+    # devices (margin=2) so every net keeps a routing path.
+    margin = 2 if analog_aware else 1
 
-    def cost(p):
-        # analog_aware pulls devices together (symmetry/critical nets), which
-        # starves the router of channels: demand one extra free cell between
-        # devices (margin=2) so every net keeps a routing path.
-        c = hpwl(sch, p) + OV * _overlap(p, wh, CORE_NAMES,
-                                         margin=2 if analog_aware else 1)
+    # Incremental cost. A move touches one device, so only the nets on its pins
+    # and the overlaps involving it change. Every term is kept as an exact
+    # integer (HPWL, critical HPWL, overlap area) and the float cost is
+    # assembled exactly as the full recompute would, so the annealing
+    # trajectory is identical to evaluating hpwl()/_overlap() from scratch.
+    net_pins: dict[str, list[tuple[str, int, int]]] = {}
+    for d in sch.devices:
+        for term, net in d.conns.items():
+            dx, dy = _KIND[d.kind]["term"][term]
+            net_pins.setdefault(net, []).append((d.name, dx, dy))
+    dev_nets = {d.name: sorted(set(d.conns.values())) for d in sch.devices}
+
+    def net_hpwl(net, p):
+        ps = net_pins[net]
+        if len(ps) < 2:
+            return 0
+        xs = [p[dn][0] + dx for dn, dx, _ in ps]
+        ys = [p[dn][1] + dy for dn, _, dy in ps]
+        return (max(xs) - min(xs)) + (max(ys) - min(ys))
+
+    def pair_overlap(a, b, p):
+        (xi, yi), (wi, hi) = p[a], wh[a]
+        (xj, yj), (wj, hj) = p[b], wh[b]
+        ox = min(xi + wi + margin, xj + wj + margin) - max(xi, xj)
+        oy = min(yi + hi + margin, yj + hj + margin) - max(yi, yj)
+        return ox * oy if ox > 0 and oy > 0 else 0
+
+    def dev_overlap(n, p):
+        return sum(pair_overlap(n, m, p) for m in CORE_NAMES if m != n)
+
+    nwl = {net: net_hpwl(net, pos) for net in net_pins}
+    tot_wl = sum(nwl.values())
+    tot_crit = sum(v for net, v in nwl.items() if net in CRITICAL_NETS)
+    tot_ov = _overlap(pos, wh, CORE_NAMES, margin=margin)
+
+    def assemble(wl, ov, crit, p):
+        c = wl + OV * ov
         if analog_aware:
-            c += w_crit * crit_hpwl(sch, p) + w_sym * symmetry_penalty(p, wh)
+            c += w_crit * crit + w_sym * symmetry_penalty(p, wh)
         return c
 
-    cur = cost(pos)
+    cur = assemble(tot_wl, tot_ov, tot_crit, pos)
     T0, T1 = 12.0, 0.05
     for k in range(iters):
         T = T0 * (T1 / T0) ** (k / iters)
@@ -180,10 +215,19 @@ def sa_place(sch: Schematic = None, seed: int = 0, iters: int = 6000,
             nx, ny = old[0] + rng.randint(-3, 3), old[1] + rng.randint(-3, 3)
         else:                                       # global jump
             nx, ny = rng.randint(_RX, _RX + _RW - w), rng.randint(_RY, _RY + _RH - h)
+        ov_old = dev_overlap(n, pos)
         pos[n] = _clamp_core(nx, ny, w, h)
-        new = cost(pos)
+        changed = {net: net_hpwl(net, pos) for net in dev_nets[n]}
+        d_wl = sum(v - nwl[net] for net, v in changed.items())
+        d_crit = sum(v - nwl[net] for net, v in changed.items() if net in CRITICAL_NETS)
+        new_ov = tot_ov + dev_overlap(n, pos) - ov_old
+        new = assemble(tot_wl + d_wl, new_ov, tot_crit + d_crit, pos)
         if new <= cur or rng.random() < math.exp((cur - new) / max(T, 1e-6)):
             cur = new
+            nwl.update(changed)
+            tot_wl += d_wl
+            tot_crit += d_crit
+            tot_ov = new_ov
         else:
             pos[n] = old
     return pos
