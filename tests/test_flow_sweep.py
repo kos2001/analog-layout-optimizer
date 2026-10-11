@@ -109,3 +109,30 @@ def test_select_best_does_not_mutate_inputs():
     results = [_result(post_pm=50.0), _result(post_pm=70.0)]
     out = flow_e2e.select_best([0, 1], results)
     assert out["sweep"]["bestSeed"] == 1 and "sweep" not in results[1]
+
+
+def _silicon(meets=True, misses=0, unmeasured=False):
+    return {"meetsSpec": meets, "misses": [{"metric": "pm_deg"}] * misses,
+            **({"unmeasured": ["gbw_hz", "pm_deg"]} if unmeasured else {})}
+
+
+def test_rank_prefers_seed_whose_silicon_meets_spec():
+    # With SKY130 verify on, each seed is sized differently; a seed whose real
+    # silicon meets spec beats one that misses, even with less post-layout PM.
+    a = {**_result(post_pm=70.0), "silicon": _silicon(meets=False, misses=1)}
+    b = {**_result(post_pm=50.0), "silicon": _silicon(meets=True)}
+    assert rank_candidates([a, b]) == 1
+
+
+def test_rank_orders_silicon_by_fewer_misses_and_unmeasured_last():
+    worst = {**_result(), "silicon": _silicon(meets=False, unmeasured=True)}
+    two = {**_result(), "silicon": _silicon(meets=False, misses=2)}
+    one = {**_result(), "silicon": _silicon(meets=False, misses=1)}
+    assert rank_candidates([worst, two, one]) == 2
+    assert rank_candidates([worst, two]) == 1
+
+
+def test_rank_physical_signoff_still_outranks_silicon():
+    fail_good_si = {**_result(verdict="FAIL", drc_errors=1), "silicon": _silicon(meets=True)}
+    pass_bad_si = {**_result(), "silicon": _silicon(meets=False, misses=3)}
+    assert rank_candidates([fail_good_si, pass_bad_si]) == 1

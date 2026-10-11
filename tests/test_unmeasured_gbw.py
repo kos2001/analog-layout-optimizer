@@ -57,3 +57,37 @@ def test_full_flow_silicon_stage_warns_and_does_not_pass(monkeypatch):
     assert st["status"] == "warn" and "not measured" in st["detail"]
     assert r["silicon"]["gbw_mhz"] is None and r["silicon"]["pm_deg"] is None
     json.dumps(r, allow_nan=False)
+
+
+# --- silicon verify: pass only when real-BSIM specs meet the sizing targets ---
+def _silicon_flow(monkeypatch, **overrides):
+    from layout_opt.opamp_opt import GAIN_MIN, GBW_MIN, PM_MIN
+    good = {"gain_db": GAIN_MIN + 5, "gbw_hz": GBW_MIN * 1.2, "pm_deg": PM_MIN + 5}
+    good.update(overrides)
+    monkeypatch.setattr(flow_e2e, "sky130_available", lambda *a, **k: True)
+    monkeypatch.setattr(flow_e2e, "sky130_model", lambda *a, **k: nb.GENERIC_NGSPICE)
+    monkeypatch.setattr(flow_e2e, "ngspice_evaluate",
+                        lambda p, *_a, **_k: replace(evaluate_opamp(p), **good))
+    r = flow_e2e.run_end_to_end("sa", 1, sky130=True)
+    return r, next(s for s in r["stages"] if s["name"].startswith("Silicon"))
+
+
+def test_silicon_stage_passes_when_specs_met(monkeypatch):
+    r, st = _silicon_flow(monkeypatch)
+    assert st["status"] == "pass"
+    assert r["silicon"]["meetsSpec"] is True and r["silicon"]["misses"] == []
+
+
+def test_silicon_stage_flags_unstable_pm_instead_of_passing(monkeypatch):
+    r, st = _silicon_flow(monkeypatch, pm_deg=40.0)
+    assert st["status"] == "warn"
+    assert "unstable" in st["detail"] and "PM" in st["detail"]
+    assert r["silicon"]["meetsSpec"] is False
+
+
+def test_silicon_stage_lists_every_spec_miss(monkeypatch):
+    from layout_opt.opamp_opt import GAIN_MIN, GBW_MIN
+    r, st = _silicon_flow(monkeypatch, gain_db=GAIN_MIN - 0.4, gbw_hz=GBW_MIN * 0.5)
+    assert st["status"] == "warn"
+    assert {m["metric"] for m in r["silicon"]["misses"]} == {"gain_db", "gbw_mhz"}
+    assert "unstable" not in st["detail"]

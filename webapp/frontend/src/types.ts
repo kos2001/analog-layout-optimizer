@@ -332,7 +332,13 @@ export interface FlowSizing {
   feasible: boolean; gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number;
   wl1: number; wl6: number; itail_uA: number; cc_pF: number;
 }
-export interface FlowSilicon { model: string; gain_db: number; gbw_mhz: number; pm_deg: number; }
+export interface SiliconMiss { metric: "gain_db" | "gbw_mhz" | "pm_deg"; value: number; target: number; }
+export interface FlowSilicon {
+  model: string;
+  // null = not measured (no 0 dB crossing in the AC sweep)
+  gain_db: number | null; gbw_mhz: number | null; pm_deg: number | null;
+  meetsSpec: boolean; misses: SiliconMiss[]; unmeasured?: string[];
+}
 export interface FullFlowData extends FlowData {
   stages: FlowStage[];
   verdict: string;
