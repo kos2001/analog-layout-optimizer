@@ -136,18 +136,86 @@ def _fast_nondominated_sort(pop: list[PPAPoint]) -> list[list[int]]:
     return fronts[:-1]
 
 
+def _tie_key(pt: PPAPoint) -> tuple:
+    """Order-independent tie-break: objective tuple, then the sizing vector."""
+    return (pt.objs, tuple(pt.params.to_vector()))
+
+
 def _crowding(pop: list[PPAPoint], idx: list[int]) -> dict[int, float]:
+    """NSGA-II crowding distance over one front (extremes get +inf).
+
+    Each per-objective sort breaks ties on the full objective tuple, so which
+    of several equal-valued members becomes the boundary (inf) point depends
+    on the designs, not on their position in the population list.
+    """
     dist = {i: 0.0 for i in idx}
     if len(idx) <= 2:
         return {i: float("inf") for i in idx}
     for m in range(3):
-        idx.sort(key=lambda i: pop[i].objs[m])
+        idx.sort(key=lambda i: (pop[i].objs[m], _tie_key(pop[i])))
         dist[idx[0]] = dist[idx[-1]] = float("inf")
         lo, hi = pop[idx[0]].objs[m], pop[idx[-1]].objs[m]
         span = hi - lo or 1.0
         for k in range(1, len(idx) - 1):
             dist[idx[k]] += (pop[idx[k + 1]].objs[m] - pop[idx[k - 1]].objs[m]) / span
     return dist
+
+
+def _crowded_order(pop: list[PPAPoint], front: list[int],
+                   cd: dict[int, float]) -> list[int]:
+    """Front members, most isolated first; equal distances (notably the many
+    +inf extremes) are ordered by the objective tuple, not by list position."""
+    return sorted(front, key=lambda i: (-cd[i], _tie_key(pop[i])))
+
+
+def knee_point(front: list[PPAPoint]) -> PPAPoint | None:
+    """The compromise member of a Pareto front: closest to the ideal point.
+
+    Each objective is min-max normalized across the front and the member with
+    the smallest Euclidean distance to the ideal (all-minimum) corner wins —
+    compromise programming (Yu 1973; Zeleny 1973), the standard knee heuristic
+    for an NSGA front when no preference is stated. It is not a claim that the
+    knee is "the best" design, only that it is not an arbitrary extreme (a
+    crowding-distance tie-break would hand the pick to whichever +inf extreme
+    comes first in the list).
+
+    An objective that is constant across the front contributes nothing. Only
+    the non-dominated, feasible members of `front` are considered, so passing a
+    whole population is safe. Ties are broken by the lexicographic objective
+    tuple (then the sizing), so the result does not depend on the order of
+    `front`.
+    """
+    pts = [p for p in front if p.feasible] or list(front)
+    if not pts:
+        return None
+    pts = [pts[i] for i in _fast_nondominated_sort(pts)[0]]
+    return pts[knee_index([p.objs for p in pts], [_tie_key(p) for p in pts])]
+
+
+def knee_index(objs: list[tuple], tie_keys: list | None = None) -> int | None:
+    """Index of the member closest to the ideal point (see `knee_point`).
+
+    `objs` are minimized objective vectors of an already non-dominated set.
+    Objectives are min-max normalized across the set; a constant objective
+    contributes nothing. Ties go to the smallest `tie_keys[i]` (default: the
+    objective vector itself), never to list position.
+    """
+    if not objs:
+        return None
+    keys = tie_keys if tie_keys is not None else [tuple(o) for o in objs]
+    n_obj = len(objs[0])
+    lo = [min(o[m] for o in objs) for m in range(n_obj)]
+    hi = [max(o[m] for o in objs) for m in range(n_obj)]
+
+    def distance(o) -> float:
+        total = 0.0
+        for m in range(n_obj):
+            span = hi[m] - lo[m]
+            if span > 0:
+                total += ((o[m] - lo[m]) / span) ** 2
+        return math.sqrt(total)
+
+    return min(range(len(objs)), key=lambda i: (distance(objs[i]), keys[i]))
 
 
 def _crossover_mutate(a: list[float], b: list[float], rng: random.Random,
@@ -202,14 +270,14 @@ def nsga2(pop_size: int = 80, generations: int = 40, seed: int = 0):
                 newpop.extend(merged[i] for i in fr)
             else:
                 cd = _crowding(merged, list(fr))
-                fr_sorted = sorted(fr, key=lambda i: cd[i], reverse=True)
+                fr_sorted = _crowded_order(merged, fr, cd)
                 newpop.extend(merged[i] for i in fr_sorted[:pop_size - len(newpop)])
                 break
         pop = newpop
 
     fronts = _fast_nondominated_sort(pop)
     pareto = [pop[i] for i in fronts[0] if pop[i].feasible]
-    pareto.sort(key=lambda pt: pt.gbw_mhz)
+    pareto.sort(key=lambda pt: (pt.gbw_mhz, _tie_key(pt)))
     return pareto, pop
 
 
@@ -236,19 +304,28 @@ def select_by_weights(pareto: list[PPAPoint], w_power: float, w_area: float,
         return (v - lo) / (hi - lo) if hi > lo else 0.0
     tot = (w_power + w_area + w_perf) or 1.0
     wp, wa, wf = w_power / tot, w_area / tot, w_perf / tot
-    best, bestscore = None, float("inf")
-    for p in pareto:
-        score = wp * norm(p.power_mw, pw) + wa * norm(p.area_um2, ar) \
-            + wf * (1.0 - norm(p.gbw_mhz, gb))     # higher GBW is better
-        if score < bestscore:
-            best, bestscore = p, score
-    return best
+    def score(p: PPAPoint) -> float:
+        return (wp * norm(p.power_mw, pw) + wa * norm(p.area_um2, ar)
+                + wf * (1.0 - norm(p.gbw_mhz, gb)))     # higher GBW is better
+
+    # Equal scores are broken by the objective tuple, not by list order.
+    return min(pareto, key=lambda p: (score(p), _tie_key(p)))
 
 
 def run_ppa(pop_size: int = 80, generations: int = 40, seed: int = 0,
-            weights: tuple = (1.0, 1.0, 1.0)) -> dict:
+            weights: tuple | None = None) -> dict:
+    """Pareto front + the chosen design.
+
+    With `weights` (power, area, perf) the chosen design is the preference-
+    weighted pick; without, it is the front's knee (`knee_point`). The knee is
+    always reported under "knee", and "selection" says which rule chose.
+    """
     pareto, pop = nsga2(pop_size, generations, seed)
-    chosen = select_by_weights(pareto, *weights)
+    knee = knee_point(pareto)
+    if weights is None:
+        chosen, selection = knee, "knee"
+    else:
+        chosen, selection = select_by_weights(pareto, *weights), "weights"
     # Dominated cloud (feasible, non-Pareto) for context, capped.
     pset = {id(p) for p in pareto}
     cloud = [p for p in pop if p.feasible and id(p) not in pset][:200]
@@ -257,7 +334,11 @@ def run_ppa(pop_size: int = 80, generations: int = 40, seed: int = 0,
         "cloud": [{"power_mw": round(p.power_mw, 4), "area_um2": round(p.area_um2, 2),
                    "gbw_mhz": round(p.gbw_mhz, 2)} for p in cloud],
         "chosen": _pt_payload(chosen) if chosen else None,
-        "weights": {"power": weights[0], "area": weights[1], "perf": weights[2]},
+        "knee": _pt_payload(knee) if knee else None,
+        "selection": selection,
+        "weights": ({"power": weights[0], "area": weights[1], "perf": weights[2]}
+                    if weights is not None
+                    else {"power": None, "area": None, "perf": None}),
         "ranges": {
             "power_mw": [round(min(p.power_mw for p in pareto), 4),
                          round(max(p.power_mw for p in pareto), 4)],

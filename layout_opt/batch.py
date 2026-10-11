@@ -1,7 +1,7 @@
 """Batch mode: config-driven, reproducible flow runs with a tool-style run directory.
 
     python -m layout_opt flow -f flow.json --outdir runs/ota_tt
-    python -m layout_opt flow --seeds 0,1,2,3 --sky130
+    python -m layout_opt flow --seeds 0,1,2,3 --sky130 -j 4
 
 A run directory looks like a commercial P&R / sign-off tool's:
 
@@ -232,7 +232,8 @@ def _setup_logging(logfile: Path, quiet: bool) -> None:
         log.addHandler(sh)
 
 
-def run_flow_batch(cfg: dict, outdir: Path, quiet: bool = False) -> int:
+def run_flow_batch(cfg: dict, outdir: Path, quiet: bool = False,
+                   workers: int | None = None) -> int:
     from .flow_e2e import run_best_of, run_end_to_end
 
     outdir = Path(outdir)
@@ -255,9 +256,11 @@ def run_flow_batch(cfg: dict, outdir: Path, quiet: bool = False) -> int:
     t0 = time.perf_counter()
     with Profiler(on_stage) as prof:
         if len(cfg["seeds"]) > 1:
-            log.info("(ALO-010) Seed sweep %s, selecting best by sign-off ranking", cfg["seeds"])
+            log.info("(ALO-010) Seed sweep %s, selecting best by sign-off ranking (%s worker(s))",
+                     cfg["seeds"], workers or "auto")
             result = run_best_of(place=cfg["place"], seeds=cfg["seeds"],
-                                 sky130=cfg["sky130"], maxiter=cfg["maxiter"])
+                                 sky130=cfg["sky130"], maxiter=cfg["maxiter"],
+                                 workers=workers)
         else:
             result = run_end_to_end(place=cfg["place"], seed=cfg["seeds"][0],
                                     sky130=cfg["sky130"], maxiter=cfg["maxiter"])
@@ -325,6 +328,8 @@ def main(argv=None) -> int:
     fl.add_argument("--place", choices=("sa", "random"))
     fl.add_argument("--seeds", help="comma-separated seeds, e.g. 0,1,2,3 (best-of-N)")
     fl.add_argument("--maxiter", type=int, help="sizing optimizer iterations")
+    fl.add_argument("-j", "--workers", type=int,
+                    help="parallel seed-sweep processes (default: min(#seeds, #cpus); 1 = serial)")
     fl.add_argument("--sky130", action="store_true", default=None, help="silicon verify with SKY130")
     fl.add_argument("--no-gds", dest="gds", action="store_false", default=None, help="skip GDSII output")
     fl.add_argument("--klayout-drc", action="store_true", default=None, help="run KLayout DRC on the GDS")
@@ -344,9 +349,12 @@ def main(argv=None) -> int:
     except (ConfigError, ValueError) as e:
         print(f"ERROR (ALO-002) {e}", file=sys.stderr)
         return EXIT_ERROR
+    if args.workers is not None and args.workers < 1:
+        print("ERROR (ALO-002) --workers must be >= 1", file=sys.stderr)
+        return EXIT_ERROR
     outdir = Path(args.outdir or f"runs/{cfg['design']}_{datetime.now():%Y%m%d_%H%M%S}")
     try:
-        return run_flow_batch(cfg, outdir, quiet=args.quiet)
+        return run_flow_batch(cfg, outdir, quiet=args.quiet, workers=args.workers)
     except Exception:
         log.exception("(ALO-999) Internal error — flow aborted")
         if not log.handlers:
