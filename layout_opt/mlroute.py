@@ -230,15 +230,32 @@ class _Surface:
 
 
 def _astar_idx(sf: _Surface, sources, t: int, blk: bytearray, passable,
-               hist=None, occ=None, pres_fac: float = 0.0, mine=()):
+               hist=None, occ=None, pres_fac: float = 0.0, mine=(), bbox=None,
+               tight_h: bool = False):
     """astar3 on flat indices; with ``hist`` set, applies the negotiated cost
-    ``history + pres_fac * occupancy`` (0 on the net's own pins)."""
+    ``history + pres_fac * occupancy`` (0 on the net's own pins). ``bbox`` =
+    (x0, y0, x1, y1) confines the search window (the whole grid by default).
+
+    ``tight_h`` adds to the heuristic the cheapest cost of entering one of the
+    target's neighbours, which any path from >= 2 cells away must pay. It stays
+    admissible (same path cost) but prunes the large equal-cost plateaus a grid
+    has once pin-access costs are non-zero; ties may resolve differently."""
     H, L = sf.H, sf.L
     HL = H * L
-    maxx, maxy = sf.W - 1, H - 1
+    minx, miny, maxx, maxy = bbox if bbox is not None else (0, 0, sf.W - 1, H - 1)
     push, pop = heapq.heappush, heapq.heappop
     inf = float("inf")
     tx, ty = divmod(t // L, H)
+    hb = 0.0
+    if tight_h and hist is not None:
+        hb = inf
+        tl = t % L
+        for j, ok in ((t + HL, tx < sf.W - 1), (t - HL, tx > 0), (t + L, ty < H - 1),
+                      (t - L, ty > 0), (t + 1, tl < L - 1), (t - 1, tl > 0)):
+            if ok and not (blk[j] and j not in passable):
+                hb = min(hb, 0.0 if j in mine else hist[j] + pres_fac * occ[j])
+        if hb == inf:
+            hb = 0.0
     open_heap: list = []
     came: dict = {}
     best_g: dict = {}
@@ -249,7 +266,8 @@ def _astar_idx(sf: _Surface, sources, t: int, blk: bytearray, passable,
         best_g[key] = 0.0
         came[key] = None
         sxy = s // L
-        push(open_heap, (abs(sxy // H - tx) + abs(sxy % H - ty), 0.0, s, -1))
+        md = abs(sxy // H - tx) + abs(sxy % H - ty)
+        push(open_heap, (md + (hb if md >= 2 else 0.0), 0.0, s, -1))
 
     while open_heap:
         f, g, i, d = pop(open_heap)
@@ -274,7 +292,7 @@ def _astar_idx(sf: _Surface, sources, t: int, blk: bytearray, passable,
                     continue
                 j = i + HL; nx, ny = x + 1, y
             elif di == 1:
-                if x == 0:
+                if x == minx:
                     continue
                 j = i - HL; nx, ny = x - 1, y
             elif di == 2:
@@ -282,7 +300,7 @@ def _astar_idx(sf: _Surface, sources, t: int, blk: bytearray, passable,
                     continue
                 j = i + L; nx, ny = x, y + 1
             else:
-                if y == 0:
+                if y == miny:
                     continue
                 j = i - L; nx, ny = x, y - 1
             if blk[j] and j != t and j not in passable:
@@ -299,7 +317,8 @@ def _astar_idx(sf: _Surface, sources, t: int, blk: bytearray, passable,
             if ng < best_g.get(nkey, inf):
                 best_g[nkey] = ng
                 came[nkey] = key
-                push(open_heap, (ng + (abs(nx - tx) + abs(ny - ty)), ng, j, di))
+                md = abs(nx - tx) + abs(ny - ty)
+                push(open_heap, (ng + md + (hb if md >= 2 else 0.0), ng, j, di))
         # Via moves (change layer, same x,y): up then down.
         for dl in (1, -1):
             nl = l + dl
@@ -315,12 +334,14 @@ def _astar_idx(sf: _Surface, sources, t: int, blk: bytearray, passable,
             if ng < best_g.get(nkey, inf):
                 best_g[nkey] = ng
                 came[nkey] = key
-                push(open_heap, (ng + (abs(x - tx) + abs(y - ty)), ng, j, d))
+                md = abs(x - tx) + abs(y - ty)
+                push(open_heap, (ng + md + (hb if md >= 2 else 0.0), ng, j, d))
     return None
 
 
 def _route_net_idx(sf: _Surface, pins: list[Cell3], blk: bytearray,
-                   hist=None, occ=None, pres_fac: float = 0.0) -> NetRoute3:
+                   hist=None, occ=None, pres_fac: float = 0.0,
+                   bbox=None, tight_h: bool = False) -> NetRoute3:
     """route_net3 on the flat surface (same tree-growth order and result)."""
     nr = NetRoute3(net="")
     if not pins:
@@ -334,7 +355,7 @@ def _route_net_idx(sf: _Surface, pins: list[Cell3], blk: bytearray,
         remaining.sort(key=lambda p: _h(p, tree))
         pin = remaining.pop(0)
         ipath = _astar_idx(sf, tree_i, sf.idx(pin), blk, tree_i,
-                           hist, occ, pres_fac, mine)
+                           hist, occ, pres_fac, mine, bbox, tight_h)
         if ipath is None:
             nr.routed = False
             nr.cells = set()
@@ -407,6 +428,88 @@ def route_all3(grid: Grid3, nets: dict[str, list[Cell3]], order: list[str]) -> M
     return sol
 
 
+# Search-window margin (grid cells) around a net's pin bounding box. Each time
+# a net is ripped up the window grows, so a net squeezed by congestion can
+# still detour widely; a window that can't connect falls back to the full grid.
+BBOX_MARGIN = 4
+BBOX_GROWTH = 3
+# Soft pin-access reservation: the cells a pin escapes through (its planar
+# neighbours and the via above/below) start with this history cost, so other
+# nets don't wall a pin in. The owner pays it equally on every escape, which
+# leaves its own choice of exit unchanged.
+PIN_ACCESS_COST = 1.0
+
+
+def _net_bbox(sf: _Surface, pins: list[Cell3], margin: int):
+    xs = [p[0] for p in pins]
+    ys = [p[1] for p in pins]
+    return (max(0, min(xs) - margin), max(0, min(ys) - margin),
+            min(sf.W - 1, max(xs) + margin), min(sf.H - 1, max(ys) + margin))
+
+
+def _negotiate_incremental(sf: _Surface, nets: dict[str, list[Cell3]], hist,
+                           max_iter: int, pres_fac: float, pres_growth: float,
+                           hist_fac: float):
+    """PathFinder with incremental rip-up and reroute.
+
+    Occupancy persists across iterations: a net is ripped up (its cells leave
+    the occupancy map) and rerouted against every other net's current wires,
+    and after the first pass only nets that touch an overused cell, or failed,
+    are rerouted. Each search is confined to the net's bounding box plus a
+    margin that widens with every rip-up. Returns (routes, iterations,
+    converged)."""
+    # Pins can never move, so an overlap on one can't be negotiated away: every
+    # pin is a hard blockage, cleared only for its own net while it routes.
+    blk = bytearray(sf.base)
+    for pins in nets.values():
+        for p in pins:
+            blk[sf.idx(p)] = 1
+        for x, y, l in pins:
+            for c in ((x + 1, y, l), (x - 1, y, l), (x, y + 1, l), (x, y - 1, l),
+                      (x, y, l + 1), (x, y, l - 1)):
+                if sf.in_bounds(c):
+                    hist[sf.idx(c)] += PIN_ACCESS_COST
+    occ = [0] * sf.n
+    routes: dict[str, NetRoute3] = {}
+    owned: dict[str, list[int]] = {}
+    ripups = dict.fromkeys(nets, 0)
+    todo = list(nets)
+    it = 0
+    for it in range(1, max_iter + 1):
+        for net in todo:
+            for i in owned.get(net, ()):
+                occ[i] -= 1
+            pins = nets[net]
+            nr = NetRoute3(net="")
+            if pins:
+                mine = [sf.idx(p) for p in pins]
+                for i in mine:
+                    blk[i] = sf.base[i]
+                bb = _net_bbox(sf, pins, BBOX_MARGIN + BBOX_GROWTH * ripups[net])
+                nr = _route_net_idx(sf, pins, blk, hist, occ, pres_fac, bb, True)
+                if not nr.routed and bb != (0, 0, sf.W - 1, sf.H - 1):
+                    nr = _route_net_idx(sf, pins, blk, hist, occ, pres_fac,
+                                        None, True)
+                for i in mine:
+                    blk[i] = 1
+            nr.net = net
+            routes[net] = nr
+            cells = [sf.idx(c) for c in nr.cells] if nr.routed else []
+            owned[net] = cells
+            for i in cells:
+                occ[i] += 1
+            ripups[net] += 1
+        overused = {i for cells in owned.values() for i in cells if occ[i] > 1}
+        for i in overused:
+            hist[i] += hist_fac
+        pres_fac *= pres_growth
+        todo = [n for n in nets if not routes[n].routed
+                or any(i in overused for i in owned[n])]
+        if not todo:
+            return routes, it, True
+    return routes, it, False
+
+
 def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
                       max_iter: int = 24, pres_fac0: float = 0.5,
                       pres_growth: float = 1.7, hist_fac: float = 1.0,
@@ -428,19 +531,14 @@ def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
     else:
         history: dict[Cell3, float] = {}
 
-    for it in range(1, max_iter + 1):
-        routes = {}
-        if fast:
-            occ_a = [0] * sf.n
-            touched: set[int] = set()
-        else:
+    if fast:
+        routes, sol.iterations, sol.converged = _negotiate_incremental(
+            sf, nets, hist, max_iter, pres_fac, pres_growth, hist_fac)
+    else:
+        for it in range(1, max_iter + 1):
+            routes = {}
             occ: dict[Cell3, int] = {}
-        for net, pins in nets.items():
-            # Soft loop prices contention (incl. crossing a foreign pin); any
-            # residual overlap is caught below and legalized/sequentialized.
-            if fast:
-                nr = _route_net_idx(sf, pins, sf.base, hist, occ_a, pres_fac)
-            else:
+            for net, pins in nets.items():
                 mine = by_net[net]
 
                 def cost(cell, _mine=mine):
@@ -450,31 +548,20 @@ def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
                     return history.get(cell, 0.0) + pres
 
                 nr = route_net3(grid, pins, grid.blocked, cost)
-            nr.net = net
-            routes[net] = nr
-            if nr.routed:
-                if fast:
-                    for c in nr.cells:
-                        i = sf.idx(c)
-                        occ_a[i] += 1
-                        touched.add(i)
-                else:
+                nr.net = net
+                routes[net] = nr
+                if nr.routed:
                     for c in nr.cells:
                         occ[c] = occ.get(c, 0) + 1
-        # Foreign pins are reserved, so any shared cell now is a real wire short.
-        if fast:
-            overused = [i for i in touched if occ_a[i] > 1]
-            for i in overused:
-                hist[i] += hist_fac
-        else:
+            # Foreign pins are reserved, so any shared cell now is a real wire short.
             overused = [c for c, n in occ.items() if n > 1]
             for c in overused:
                 history[c] = history.get(c, 0.0) + hist_fac
-        pres_fac *= pres_growth
-        sol.iterations = it
-        if not overused and all(r.routed for r in routes.values()):
-            sol.converged = True
-            break
+            pres_fac *= pres_growth
+            sol.iterations = it
+            if not overused and all(r.routed for r in routes.values()):
+                sol.converged = True
+                break
 
     # Legalization: deterministically give each contested cell to one net and
     # hard-block it for the rest, rerouting them, until no overlap remains.
@@ -490,12 +577,16 @@ def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
             if not overused_l and all(r.routed for r in routes.values()):
                 sol.converged = True
                 break
+            redo = {n for n, r in routes.items() if not r.routed}
             for c, ns in overused_l.items():
                 winner = min(ns)                 # deterministic owner
                 for n in ns:
                     if n != winner:
                         forbidden[n].add(c)
+                        redo.add(n)
             for net, pins in nets.items():
+                if net not in redo:
+                    continue
                 foreign = allp - by_net[net]
                 if fast:
                     blk = sf.blockmap(forbidden[net], sf.blockmap(foreign, bytearray(sf.base)))
@@ -507,21 +598,47 @@ def negotiated_route3(grid: Grid3, nets: dict[str, list[Cell3]],
         sol.iterations += 1
 
     # Hard guarantee: never emit a short. If any overlap survives legalization,
-    # fall back to a sequential pass (each net hard-blocks prior ones -> zero
-    # overlap by construction); an unroutable net becomes an honest open, never
-    # a hidden short that masquerades as a clean sign-off.
-    occ_chk: dict[Cell3, int] = {}
-    for r in routes.values():
+    # resolve it with zero overlap by construction — either keep the overlap-
+    # free nets and reroute only the losers around everything else, or a fresh
+    # sequential pass — and keep whichever leaves fewer opens (then shorter
+    # wire). An unroutable net becomes an honest open, never a hidden short
+    # that masquerades as a clean sign-off.
+    occ_chk: dict[Cell3, set] = {}
+    for n, r in routes.items():
         if r.routed:
             for c in r.cells:
-                occ_chk[c] = occ_chk.get(c, 0) + 1
-    if any(n > 1 for n in occ_chk.values()):
+                occ_chk.setdefault(c, set()).add(n)
+    if any(len(ns) > 1 for ns in occ_chk.values()):
         def _span(net):
             xs = [p[0] for p in nets[net]]; ys = [p[1] for p in nets[net]]
             return (max(xs) - min(xs)) + (max(ys) - min(ys))
+        losers = {n for n, r in routes.items() if not r.routed}
+        for ns in occ_chk.values():
+            if len(ns) > 1:
+                losers |= ns - {min(ns)}
+        kept = {n: r for n, r in routes.items() if n not in losers}
+        occupied: set[Cell3] = set()
+        for r in kept.values():
+            occupied |= r.cells
+        repaired = dict(kept)
+        for net in sorted(losers, key=lambda n: (_span(n), n)):
+            blocked = (occupied | (allp - by_net[net])) - by_net[net]
+            if fast:
+                nr = _route_net_idx(sf, nets[net], sf.blockmap(blocked, bytearray(sf.base)))
+            else:
+                nr = route_net3(grid, nets[net], grid.blocked | blocked)
+            nr.net = net
+            repaired[net] = nr
+            if nr.routed:
+                occupied |= nr.cells
+        repaired = {n: repaired[n] for n in nets}
         seq = route_all3(grid, nets, sorted(nets, key=_span))
-        routes = seq.routes
-        sol.converged = not seq.failed
+
+        def _score(rs):
+            return (sum(not r.routed for r in rs.values()),
+                    sum(r.wirelength for r in rs.values() if r.routed))
+        routes = repaired if _score(repaired) <= _score(seq.routes) else seq.routes
+        sol.converged = all(r.routed for r in routes.values())
 
     sol.routes = routes
     sol.failed = [n for n, r in routes.items() if not r.routed]
