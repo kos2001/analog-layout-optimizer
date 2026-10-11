@@ -61,7 +61,7 @@ export default function SurrogateView() {
           <div className="maze-wrap">
             <Chart data={data} />
             <div className="maze-side">
-              <div className="metrics" style={{ flexDirection: "column", gap: 10 }}>
+              <div className="metrics stack">
                 <div><span className="metric-label">expensive (ground-truth) calls</span>
                   <span className="metric-value">{data.expensiveCalls}</span></div>
                 <div><span className="metric-label">surrogate calls (cheap)</span>

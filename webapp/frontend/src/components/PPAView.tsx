@@ -124,7 +124,7 @@ export default function PPAView() {
                 <Weight label={t("ppa.w.perf")} value={w.perf} onChange={(v) => setW({ ...w, perf: v })} />
               </div>
               {chosen && (
-                <div className="metrics" style={{ flexDirection: "column", gap: 8 }}>
+                <div className="metrics stack">
                   <strong style={{ fontSize: 12, color: "var(--accent)" }}>{t("ppa.chosen")}</strong>
                   <div><span className="metric-label">power</span><span className="metric-value">{chosen.power_mw} mW</span></div>
                   <div><span className="metric-label">GBW</span><span className="metric-value">{chosen.gbw_mhz} MHz</span></div>
