@@ -155,7 +155,8 @@ def ac_response(p: OpAmpParams, freqs_hz):
 
 
 def cm_window(p: OpAmpParams, vth_n: float = VTH_N, vth_p: float = VTH_P,
-              vdd: float = VDD, margin: float = SAT_MARGIN) -> tuple[float, float]:
+              vdd: float = VDD, margin: float = SAT_MARGIN,
+              vth_n6: float | None = None) -> tuple[float, float]:
     """Input common-mode range (V) that keeps all seven devices saturated.
 
     DC node voltages of the two-stage OTA with the output held at the input
@@ -165,8 +166,10 @@ def cm_window(p: OpAmpParams, vth_n: float = VTH_N, vth_p: float = VTH_P,
     Lower edge: M5 needs tail >= Vov5 (and M6 needs Vcm >= Vov6).
     Upper edge: M2 needs outp - tail >= Vov1, i.e. Vcm <= 2 Vtn + Vov6;
     M1 needs outm - tail >= Vov1; M7 needs VDD - Vcm >= Vov7.
-    Every limit keeps *margin* volts to spare.
+    Every limit keeps *margin* volts to spare. *vth_n6* is M6's threshold when
+    it differs from the input pair's (devices at different channel lengths).
     """
+    vth6 = vth_n if vth_n6 is None else vth_n6
     i1 = p.itail / 2.0
     vov1 = _vov(KP_N, p.wl1, i1)
     vov3 = _vov(KP_P, p.wl3, i1)
@@ -174,19 +177,21 @@ def cm_window(p: OpAmpParams, vth_n: float = VTH_N, vth_p: float = VTH_P,
     vov6 = _vov(KP_N, p.wl6, p.i6)
     vov7 = _vov(KP_P, p.wl7, p.i6)
     lo = max(vth_n + vov1 + vov5 + margin, vov6 + margin)
-    hi = min(2 * vth_n + vov6 - margin,
+    hi = min(vth_n + vth6 + vov6 - margin,
              vdd - vth_p + vth_n - vov3 - margin,
              vdd - vov7 - margin)
     return lo, hi
 
 
 def headroom(p: OpAmpParams, vth_n: float = VTH_N, vth_p: float = VTH_P,
-             vdd: float = VDD, margin: float = SAT_MARGIN) -> float:
+             vdd: float = VDD, margin: float = SAT_MARGIN,
+             vth_n6: float | None = None) -> float:
     """Spare DC headroom (V): the common-mode window width, also capped by
     M4's |Vds| margin (VDD - outp - Vov3), which no choice of Vcm can fix."""
-    lo, hi = cm_window(p, vth_n, vth_p, vdd, margin)
+    lo, hi = cm_window(p, vth_n, vth_p, vdd, margin, vth_n6)
     i1 = p.itail / 2.0
-    m4 = vdd - (vth_n + _vov(KP_N, p.wl6, p.i6)) - _vov(KP_P, p.wl3, i1) - margin
+    vth6 = vth_n if vth_n6 is None else vth_n6
+    m4 = vdd - (vth6 + _vov(KP_N, p.wl6, p.i6)) - _vov(KP_P, p.wl3, i1) - margin
     return min(hi - lo, m4)
 
 
