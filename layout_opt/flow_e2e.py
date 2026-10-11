@@ -24,8 +24,8 @@ from .placement import run_flow
 from .schematic import two_stage_ota
 from .runlog import Profiler, merge_stats, stage
 from .ngspice_backend import (
-    GENERIC_NGSPICE, NgspiceUnavailable, ngspice_available, ngspice_evaluate,
-    sky130_model, sky130_available,
+    GENERIC_NGSPICE, SKY130_GAIN_L_UM, NgspiceUnavailable, ngspice_available,
+    ngspice_evaluate, sky130_model, sky130_available,
 )
 
 _log = logging.getLogger("alo")
@@ -205,7 +205,8 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
     with stage("sizing"):
         if sky130 and sky130_available():
             try:
-                cal = de_log_ngspice(seed=seed, maxiter=maxiter, model=sky130_model(),
+                cal = de_log_ngspice(seed=seed, maxiter=maxiter,
+                                     model=sky130_model(l_gain_um=SKY130_GAIN_L_UM),
                                      rounds=3, guardband=True)
             except NgspiceUnavailable as e:
                 _log.warning("SKY130-calibrated sizing unavailable, using analytic: %s", e)
@@ -253,8 +254,10 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
             try:
                 with stage("silicon"):
                     # Calibrated sizing already simulated its final design.
-                    ss = cal["sim"] if cal else ngspice_evaluate(d.params, sky130_model())
+                    ss = cal["sim"] if cal else ngspice_evaluate(
+                        d.params, sky130_model(l_gain_um=SKY130_GAIN_L_UM))
                 silicon, status, detail = _silicon_check(ss)
+                silicon["gainDeviceL_um"] = SKY130_GAIN_L_UM
                 stages.append(_stage("Silicon verify (SKY130)", status, detail))
             except NgspiceUnavailable as e:
                 stages.append(_stage("Silicon verify (SKY130)", "warn", str(e)))
