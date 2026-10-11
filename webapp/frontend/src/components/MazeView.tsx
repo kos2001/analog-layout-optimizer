@@ -119,7 +119,7 @@ export default function MazeView() {
                 {t("maze.naive")}
               </button>
             </div>
-            <div className="metrics" style={{ flexDirection: "column", gap: 10 }}>
+            <div className="metrics stack">
               <div>
                 <span className="metric-label">{t("maze.total.wl")}</span>
                 <span className="metric-value">{sol.totalWirelength}</span>

@@ -32,13 +32,13 @@ function EffectsPanel({ nl }: { nl: string }) {
       ) : (
         <>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 10 }}>
-            <div className="metrics" style={{ flexDirection: "column", gap: 6 }}>
+            <div className="metrics stack">
               <strong style={{ fontSize: 12, color: "var(--muted)" }}>DRC geometry (placement+routing)</strong>
               <span className="note">area {r.geometry.before_area} → {r.geometry.after_area} µm²
                 ({r.geometry.area_delta_pct >= 0 ? "+" : ""}{r.geometry.area_delta_pct}%), DRC {r.geometry.drc_clean ? "clean ✓" : "✗"}</span>
             </div>
             {r.device && (
-              <div className="metrics" style={{ flexDirection: "column", gap: 6 }}>
+              <div className="metrics stack">
                 <strong style={{ fontSize: 12, color: "var(--muted)" }}>
                   Device model + supply (VDD {r.device.vdd_before}→{r.device.vdd_after} V): OTA re-size
                 </strong>

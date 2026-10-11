@@ -163,7 +163,7 @@ export default function FloorplanView() {
               {t("fp.fixed")}
             </button>
           </div>
-          <div className="metrics" style={{ flexDirection: "column", gap: 10 }}>
+          <div className="metrics stack">
             <div>
               <span className="metric-label">{t("maze.total.wl")}</span>
               <span className="metric-value">

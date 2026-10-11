@@ -95,7 +95,7 @@ function MultiNet({ data }: { data: ScenarioData }) {
             </button>
           ))}
         </div>
-        <div className="metrics" style={{ flexDirection: "column", gap: 8 }}>
+        <div className="metrics stack">
           <div><span className="metric-label">{t("cx.failed")}</span>
             <span className="metric-value" style={{ color: a.failed.length ? "var(--bad)" : "var(--ok)" }}>
               {a.failed.length ? `${a.failed.length} (${a.failed.join(", ")})` : "0 ✓"}
@@ -145,7 +145,7 @@ function DiffPair({ data }: { data: ScenarioData }) {
             {t("cx.independent")}
           </button>
         </div>
-        <div className="metrics" style={{ flexDirection: "column", gap: 8 }}>
+        <div className="metrics stack">
           <div><span className="metric-label">{t("cx.coupled")}</span>
             <span className="metric-value" style={{ color: variant.coupled > 10 ? "var(--ok)" : "var(--bad)" }}>
               {variant.coupled} cells</span></div>
