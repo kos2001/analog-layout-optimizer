@@ -64,6 +64,18 @@ expose every stage. The **Full flow** tab runs the whole pipeline on one click
 (`/api/full-flow` → `layout_opt/flow_e2e.py`) and shows a stage-by-stage verdict;
 the other tabs let you explore each stage interactively.
 
+The frontend is a tool-style workspace:
+
+- **Sidebar views** grouped by stage (Flow / Layout / Analysis / Integration),
+  deep-linkable as `#/<view>`.
+- **Run manager** (bottom dock, `⌘J`): every optimizer, flow and simulator run
+  goes through `/api/jobs` and is listed with status, per-stage timing bars,
+  queue/run time and cache hits. Full flow streams its stages live over SSE.
+- **API console**: every request from the window, with status and latency.
+- **Command palette** (`⌘K`) for views and actions; `⌘B` toggles the sidebar.
+- **Status bar**: backend connectivity, engine fingerprint, compute pool and
+  result-cache hit rate from `/api/health`.
+
 ```
 ┌ sizing (DE, log-space) ── opamp_opt.py        minimize power s.t. gain/GBW/PM/slew
 │ schematic (netlist) ───── schematic.py        OTA devices+terminals = single source of truth
