@@ -3,6 +3,15 @@ import { fetchOpamp, fetchOpampBode, fetchOpampStudy, fetchPreflight, fetchSpect
 import { useT } from "../i18n";
 import type { BodeData, NgspiceEval, OpAmpResult, OpAmpStudy, Preflight, SpectreEval, PVTData } from "../types";
 
+/** A simulated metric, or an explicit "not measured" marker for null. */
+function M({ v }: { v: number | null }) {
+  return v === null
+    ? <span className="unmeasured" title="Not measured: the AC sweep never crossed 0 dB">n/m</span>
+    : <>{v}</>;
+}
+
+const pmBad = (pm: number | null) => pm !== null && pm < 45;
+
 function BodePanel({ bode }: { bode: BodeData }) {
   const W = 380, H = 200, padL = 40, padB = 24, padT = 10, padR = 10;
   const lx0 = Math.log10(bode.freq[0]), lx1 = Math.log10(bode.freq[bode.freq.length - 1]);
@@ -197,13 +206,14 @@ export default function OpAmpView() {
                 <tr><td>analytic model</td><td>{ng.analytic.gain_db}</td><td>{ng.analytic.gbw_mhz}</td>
                   <td>{ng.analytic.pm_deg}</td><td>{ng.analytic.power_mw}</td></tr>
                 {ng.sim ? (
-                  <tr><td>real ngspice ({ng.model})</td><td>{ng.sim.gain_db}</td><td>{ng.sim.gbw_mhz}</td>
-                    <td>{ng.sim.pm_deg}</td><td>{ng.sim.power_mw}</td></tr>
+                  <tr><td>real ngspice ({ng.model})</td><td><M v={ng.sim.gain_db} /></td><td><M v={ng.sim.gbw_mhz} /></td>
+                    <td><M v={ng.sim.pm_deg} /></td><td><M v={ng.sim.power_mw} /></td></tr>
                 ) : (
                   <tr><td colSpan={5} style={{ color: "var(--muted)" }}>ngspice — {ng.error}</td></tr>
                 )}
               </tbody>
             </table>
+            {ng.note && <p className="note warn-note">{ng.note}</p>}
             <p className="note">
               {ng.modelKind === "sky130"
                 ? "Real SkyWater SKY130 BSIM devices (sky130_fd_pr__nfet/pfet_01v8, tt corner) via the open PDK — silicon-grade numbers. They differ from the analytic square-law model: that gap is exactly why post-layout sim matters."
@@ -220,13 +230,14 @@ export default function OpAmpView() {
                 <tr><td>analytic model</td><td>{se.analytic.gain_db}</td><td>{se.analytic.gbw_mhz}</td>
                   <td>{se.analytic.pm_deg}</td><td>{se.analytic.power_mw}</td></tr>
                 {se.spectre ? (
-                  <tr><td>real Spectre ({se.pdk})</td><td>{se.spectre.gain_db}</td><td>{se.spectre.gbw_mhz}</td>
-                    <td>{se.spectre.pm_deg}</td><td>{se.spectre.power_mw}</td></tr>
+                  <tr><td>real Spectre ({se.pdk})</td><td><M v={se.spectre.gain_db} /></td><td><M v={se.spectre.gbw_mhz} /></td>
+                    <td><M v={se.spectre.pm_deg} /></td><td><M v={se.spectre.power_mw} /></td></tr>
                 ) : (
                   <tr><td colSpan={5} style={{ color: "var(--muted)" }}>Spectre not connected — {se.error}</td></tr>
                 )}
               </tbody>
             </table>
+            {se.note && <p className="note warn-note">{se.note}</p>}
             {se.status === "spectre_unavailable" && se.preflight && (
               <ul className="drc-list" style={{ color: "var(--muted)", marginTop: 8 }}>
                 {se.preflight.guidance.map((g, i) => <li key={i}>{g}</li>)}
@@ -270,14 +281,14 @@ export default function OpAmpView() {
                 {pvt.corners.map((c, i) => (
                   <tr key={i}>
                     <td>{c.process} · {c.temp_c}°C · {c.vdd}V{c.process === pvt.nominal?.process && c.temp_c === pvt.nominal?.temp_c ? " (nominal)" : ""}</td>
-                    <td>{c.gain_db}</td><td>{c.gbw_mhz}</td>
-                    <td style={{ color: c.pm_deg < 45 ? "var(--bad)" : "var(--text)" }}>{c.pm_deg}</td>
+                    <td><M v={c.gain_db} /></td><td><M v={c.gbw_mhz} /></td>
+                    <td style={{ color: pmBad(c.pm_deg) ? "var(--bad)" : "var(--text)" }}><M v={c.pm_deg} /></td>
                   </tr>
                 ))}
                 {pvt.worst && (
                   <tr style={{ fontWeight: 700 }}>
-                    <td>worst case</td><td>{pvt.worst.gain_db}</td><td>{pvt.worst.gbw_mhz}</td>
-                    <td style={{ color: pvt.worst.pm_deg < 45 ? "var(--bad)" : "var(--ok)" }}>{pvt.worst.pm_deg}</td>
+                    <td>worst case</td><td><M v={pvt.worst.gain_db} /></td><td><M v={pvt.worst.gbw_mhz} /></td>
+                    <td style={{ color: pmBad(pvt.worst.pm_deg) ? "var(--bad)" : "var(--ok)" }}><M v={pvt.worst.pm_deg} /></td>
                   </tr>
                 )}
               </tbody>

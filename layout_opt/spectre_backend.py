@@ -128,6 +128,11 @@ def extract_ac_metrics(freq, vout_complex):
 
     DC gain = |H| at the lowest frequency. GBW = frequency where |H| crosses 1
     (0 dB). Phase margin = 180 + phase(at GBW) in degrees.
+
+    If the sweep never crosses 0 dB — the gain is still above unity at the
+    highest frequency, or already below it at the lowest — GBW and PM were not
+    measured and come back as NaN. They are never filled in with a sweep
+    endpoint, which would pass for a real (and usually wrong) GBW.
     """
     f = np.asarray(freq, dtype=float)
     h = np.asarray(vout_complex, dtype=complex)
@@ -138,22 +143,17 @@ def extract_ac_metrics(freq, vout_complex):
 
     # Unity-gain crossing (|H| = 1).
     below = np.where(mag < 1.0)[0]
-    if below.size == 0:
-        gbw = float(f[-1])
-        ph = np.angle(h[-1], deg=True)
-    else:
-        i = below[0]
-        if i == 0:
-            gbw = float(f[0]); ph = np.angle(h[0], deg=True)
-        else:
-            # interpolate crossing in log-freq on log-mag
-            lf0, lf1 = math.log10(f[i - 1]), math.log10(f[i])
-            lm0, lm1 = math.log10(mag[i - 1]), math.log10(mag[i])
-            frac = (0.0 - lm0) / (lm1 - lm0) if lm1 != lm0 else 0.0
-            gbw = 10.0 ** (lf0 + frac * (lf1 - lf0))
-            ph = np.angle(h[i - 1], deg=True) + frac * (
-                np.angle(h[i], deg=True) - np.angle(h[i - 1], deg=True)
-            )
+    if below.size == 0 or below[0] == 0:
+        return gain_db, math.nan, math.nan
+    i = below[0]
+    # interpolate crossing in log-freq on log-mag
+    lf0, lf1 = math.log10(f[i - 1]), math.log10(f[i])
+    lm0, lm1 = math.log10(mag[i - 1]), math.log10(mag[i])
+    frac = (0.0 - lm0) / (lm1 - lm0) if lm1 != lm0 else 0.0
+    gbw = 10.0 ** (lf0 + frac * (lf1 - lf0))
+    ph = np.angle(h[i - 1], deg=True) + frac * (
+        np.angle(h[i], deg=True) - np.angle(h[i - 1], deg=True)
+    )
     pm = 180.0 + ph
     return gain_db, float(gbw), float(pm)
 
