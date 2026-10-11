@@ -147,3 +147,26 @@ def test_no_crossing_in_sweep_is_unmeasured_and_infeasible():
     assert math.isnan(s.gbw_hz) and math.isnan(s.pm_deg)
     obj = make_ngspice_objective(GENERIC_NGSPICE, runner=short_sweep)
     assert obj(params().to_vector()) >= 10.0                  # infeasible penalty, not power
+
+
+# --- testbench fidelity: all seven transistors are simulated ----------------
+def test_netlist_simulates_tail_and_load_transistors_not_ideal_sources():
+    import re
+    nl = render_netlist(params(), GENERIC_NGSPICE, "/tmp/x.txt")
+    # M5 (nmos tail) and M7 (pmos load) are real devices sized by wl5 / wl7 ...
+    assert re.search(r"^m5 tail nb5 0 0 nmos_g w=3\.6u", nl, re.M)        # wl5=20 * 0.18
+    assert re.search(r"^m7 vout pb7 vdd vdd pmos_g w=7\.2u", nl, re.M)    # wl7=40 * 0.18
+    # ... biased by 1:1 diode mirrors; the ideal sources only feed the mirrors.
+    assert re.search(r"^mb5 nb5 nb5 0 0 nmos_g w=3\.6u", nl, re.M)
+    assert re.search(r"^mb7 pb7 pb7 vdd vdd pmos_g w=7\.2u", nl, re.M)
+    assert not re.search(r"^i\w* \w+ (tail|vout) ", nl, re.M)            # no ideal source on the core
+
+
+@pytest.mark.skipif(not ngspice_available(), reason="ngspice not installed")
+def test_live_load_headroom_matters_now_that_m7_is_real():
+    from dataclasses import replace
+    ok = ngspice_evaluate(params(), GENERIC_NGSPICE)
+    # Starve M7 (tiny W/L -> overdrive far beyond its Vsd): it leaves
+    # saturation and the gain collapses. Ideal sources could never show this.
+    starved = ngspice_evaluate(replace(params(), wl7=0.05), GENERIC_NGSPICE)
+    assert starved.gain_db < ok.gain_db - 10

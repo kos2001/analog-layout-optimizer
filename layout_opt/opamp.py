@@ -41,6 +41,9 @@ LAMBDA_N = 0.10    # channel-length modulation (1/V)
 LAMBDA_P = 0.12
 VDD = 1.8
 CL = 1e-12         # load capacitance (1 pF)
+VTH_N = 0.40       # threshold voltages of the square-law devices (V); the
+VTH_P = 0.40       # generic ngspice level-1 models use the same vto
+SAT_MARGIN = 0.05  # Vds - Vov every device must keep at the bias point (V)
 
 
 @dataclass(frozen=True)
@@ -97,6 +100,9 @@ class OpAmpSpecs:
     vov5: float
     vov6: float
     vov7: float
+    # Width (V) of the input common-mode window that keeps every device
+    # saturated with SAT_MARGIN to spare; < 0 means no valid bias point.
+    headroom: float = math.inf
 
     def unmeasured(self) -> list[str]:
         """Simulated headline metrics that came back NaN (not measured)."""
@@ -148,6 +154,42 @@ def ac_response(p: OpAmpParams, freqs_hz):
     return mag_db, phase_deg
 
 
+def cm_window(p: OpAmpParams, vth_n: float = VTH_N, vth_p: float = VTH_P,
+              vdd: float = VDD, margin: float = SAT_MARGIN) -> tuple[float, float]:
+    """Input common-mode range (V) that keeps all seven devices saturated.
+
+    DC node voltages of the two-stage OTA with the output held at the input
+    common mode Vcm (unity-gain / DC-feedback bias):
+      tail = Vcm - Vtn - Vov1      outm = VDD - |Vtp| - Vov3
+      outp = Vtn + Vov6 (set by M6 carrying the load current)
+    Lower edge: M5 needs tail >= Vov5 (and M6 needs Vcm >= Vov6).
+    Upper edge: M2 needs outp - tail >= Vov1, i.e. Vcm <= 2 Vtn + Vov6;
+    M1 needs outm - tail >= Vov1; M7 needs VDD - Vcm >= Vov7.
+    Every limit keeps *margin* volts to spare.
+    """
+    i1 = p.itail / 2.0
+    vov1 = _vov(KP_N, p.wl1, i1)
+    vov3 = _vov(KP_P, p.wl3, i1)
+    vov5 = _vov(KP_N, p.wl5, p.itail)
+    vov6 = _vov(KP_N, p.wl6, p.i6)
+    vov7 = _vov(KP_P, p.wl7, p.i6)
+    lo = max(vth_n + vov1 + vov5 + margin, vov6 + margin)
+    hi = min(2 * vth_n + vov6 - margin,
+             vdd - vth_p + vth_n - vov3 - margin,
+             vdd - vov7 - margin)
+    return lo, hi
+
+
+def headroom(p: OpAmpParams, vth_n: float = VTH_N, vth_p: float = VTH_P,
+             vdd: float = VDD, margin: float = SAT_MARGIN) -> float:
+    """Spare DC headroom (V): the common-mode window width, also capped by
+    M4's |Vds| margin (VDD - outp - Vov3), which no choice of Vcm can fix."""
+    lo, hi = cm_window(p, vth_n, vth_p, vdd, margin)
+    i1 = p.itail / 2.0
+    m4 = vdd - (vth_n + _vov(KP_N, p.wl6, p.i6)) - _vov(KP_P, p.wl3, i1) - margin
+    return min(hi - lo, m4)
+
+
 def evaluate_opamp(p: OpAmpParams) -> OpAmpSpecs:
     i1 = p.itail / 2.0
     gm1 = _gm(KP_N, p.wl1, i1)
@@ -177,4 +219,5 @@ def evaluate_opamp(p: OpAmpParams) -> OpAmpSpecs:
         vov5=_vov(KP_N, p.wl5, p.itail),    # tail (I = Itail)
         vov6=_vov(KP_N, p.wl6, p.i6),       # 2nd-stage driver
         vov7=_vov(KP_P, p.wl7, p.i6),       # 2nd-stage load
+        headroom=headroom(p),
     )
