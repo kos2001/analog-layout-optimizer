@@ -70,7 +70,7 @@ function PostLayoutPanel({ data }: { data: FlowData }) {
             {row("PM", pl.pre.pm_deg, pl.post.pm_deg, "°")}
           </tbody>
         </table>
-        <div className="metrics" style={{ flexDirection: "column", gap: 6, fontSize: 12 }}>
+        <div className="metrics stack" style={{ fontSize: 12 }}>
           <strong style={{ fontSize: 12, color: "var(--muted)" }}>{t("flow.post.critical")}</strong>
           {Object.entries(pl.critical).map(([net, p]) => (
             <span key={net} style={{ color: "var(--muted)" }}>
@@ -191,7 +191,7 @@ export default function FlowView() {
           <div className="maze-wrap">
             <RouteGrid data={data} netColor={netColor} hover={hover} setHover={setHover} showDrc={showDrc} />
             <div className="maze-side" style={{ minWidth: 280 }}>
-              <div className="metrics" style={{ flexDirection: "column", gap: 8 }}>
+              <div className="metrics stack">
                 <div><span className="metric-label">{t("flow.hpwl")}</span><span className="metric-value">{data.hpwl}</span></div>
                 <div><span className="metric-label">{t("maze.total.wl")}</span><span className="metric-value">{r.totalWirelength}</span></div>
                 <div><span className="metric-label">vias</span><span className="metric-value">{r.totalVias}</span></div>

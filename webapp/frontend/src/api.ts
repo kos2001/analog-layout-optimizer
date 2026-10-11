@@ -1,204 +1,92 @@
-import type { Config, LayoutPayload, OptimizeResult, Params } from "./types";
+// Typed API client. Interactive, sub-100 ms calls go straight to their
+// endpoint; anything that runs an optimizer, a router sweep or a simulator is
+// submitted through the run manager (/api/jobs), so it shows up in the Runs
+// dock with live stage progress and shares the backend result cache. Job
+// results are byte-identical to the direct endpoint responses.
 
-async function jsonOrThrow<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    throw new Error(`${res.status} ${res.statusText}`);
-  }
-  return (await res.json()) as T;
-}
+import { runJob } from "./shell/jobs";
+import { http } from "./shell/telemetry";
+import type {
+  AdaptResponse, AgentResp, AntennaResult, BodeData, BridgeData, CCCompare, Config,
+  EmResult, FloorplanComponent, FloorplanData, FlowData, FullFlowData, GdsExport,
+  KlayoutDrc, LayoutPayload, LayoutShapes, LdeResult, LvsResult, MazeData, NgspiceEval,
+  OpAmpResult, OpAmpStudy, OptimizeResult, Params, PPAData, Preflight, ProcessEffects,
+  PVTData, ScenarioCase, ScenarioData, SkillData, SpectreEval, SurrogateData, TcoilCurve,
+  TcoilData, TcoilGeom,
+} from "./types";
+import type { JobStage } from "./shell/jobs";
 
-export async function fetchConfig(): Promise<Config> {
-  return jsonOrThrow<Config>(await fetch("/api/config"));
-}
+type Place = "sa" | "random";
+type OnStage = (s: JobStage) => void;
 
-export async function evaluate(params: Params): Promise<LayoutPayload> {
-  return jsonOrThrow<LayoutPayload>(
-    await fetch("/api/evaluate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
-    }),
-  );
-}
+// --- device / joint layout ---------------------------------------------------
+export const fetchConfig = () => http<Config>("/api/config");
+export const evaluate = (params: Params) =>
+  http<LayoutPayload>("/api/evaluate", { json: params });
+export const optimize = (seed = 0, maxiter = 60) =>
+  runJob<OptimizeResult>("optimize", { seed, maxiter });
+export const optimizeJoint = (seed = 0, maxiter = 60) =>
+  runJob<OptimizeResult>("joint", { seed, maxiter });
 
-export async function optimize(
-  seed = 0,
-  maxiter = 60,
-): Promise<OptimizeResult> {
-  return jsonOrThrow<OptimizeResult>(
-    await fetch("/api/optimize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ seed, maxiter }),
-    }),
-  );
-}
+// --- routing ------------------------------------------------------------------
+export const fetchMaze = () => runJob<MazeData>("maze", {});
+export const fetchScenarioCases = () => http<{ cases: ScenarioCase[] }>("/api/scenarios");
+export const fetchScenario = (key: string) => http<ScenarioData>(`/api/scenarios/${key}`);
+export const fetchCommonCentroid = (rows = 4, cols = 4) =>
+  http<CCCompare>(`/api/common-centroid?rows=${rows}&cols=${cols}`);
+export const fetchFloorplanScenario = () => http<FloorplanData>("/api/floorplan/scenario");
+export const routeFloorplan = (width: number, height: number,
+                               components: FloorplanComponent[], optimize: boolean) =>
+  http<FloorplanData>("/api/floorplan/route", { json: { width, height, components, optimize } });
 
-export async function optimizeJoint(
-  seed = 0,
-  maxiter = 60,
-): Promise<OptimizeResult> {
-  return jsonOrThrow<OptimizeResult>(
-    await fetch("/api/joint", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ seed, maxiter }),
-    }),
-  );
-}
+// --- schematic -> P&R -> sign-off ------------------------------------------------
+export const fetchFlow = (place: Place, seed = 0, analog = false) =>
+  runJob<FlowData>("flow", { place, seed, analog });
+export const fetchFullFlow = (place: Place, seed = 0, sky130 = false, sweep = 0,
+                              onStage?: OnStage) =>
+  runJob<FullFlowData>("full-flow", { place, seed, sky130, sweep }, { onStage });
+export const fetchGds = (place: Place, seed = 0) =>
+  runJob<GdsExport>("flow/gds", { place, seed });
+export const fetchKlayoutDrc = (place: Place, seed = 0) =>
+  runJob<KlayoutDrc>("flow/drc-klayout", { place, seed });
+export const fetchLvs = () => http<LvsResult>("/api/lvs");
+export const fetchAntenna = () => http<AntennaResult>("/api/antenna");
+export const fetchEm = () => http<EmResult>("/api/em");
+export const fetchLde = () => http<LdeResult>("/api/lde");
+export const fetchLayoutShapes = (which: "ota" | "mirror" | "diffpair" = "ota") =>
+  http<LayoutShapes>(`/api/layout/shapes?which=${which}`);
 
-import type { MazeData, TcoilData, TcoilCurve } from "./types";
+// --- PPA / analog sizing -------------------------------------------------------
+export const fetchPPA = (wPower: number, wArea: number, wPerf: number, seed = 0) =>
+  runJob<PPAData>("ppa", { w_power: wPower, w_area: wArea, w_perf: wPerf, seed });
+export const fetchOpamp = () => runJob<OpAmpResult>("opamp", {});
+export const fetchOpampStudy = () =>
+  runJob<OpAmpStudy>("opamp/study", { seeds: 4 });
+export const fetchPreflight = () => http<Preflight>("/api/opamp/preflight");
+export const fetchSpectreEval = () =>
+  runJob<SpectreEval>("opamp/spectre-eval", {});
+export const fetchNgspiceEval = (model: "generic" | "sky130" = "generic") =>
+  runJob<NgspiceEval>("opamp/ngspice-eval", { model });
+export const fetchOpampBode = () => http<BodeData>("/api/opamp/bode");
+export const fetchPVT = (full = false) =>
+  runJob<PVTData>("pvt", { full });
 
-export async function fetchMaze(): Promise<MazeData> {
-  return jsonOrThrow<MazeData>(await fetch("/api/maze"));
-}
-
-export async function fetchTcoil(): Promise<TcoilData> {
-  return jsonOrThrow<TcoilData>(await fetch("/api/tcoil"));
-}
-
-export async function evalTcoil(L: number, k: number, Cb: number): Promise<TcoilCurve> {
-  return jsonOrThrow<TcoilCurve>(
-    await fetch("/api/tcoil/eval", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ L, k, Cb }),
-    }),
-  );
-}
-
-import type { OpAmpResult, OpAmpStudy, Preflight, SpectreEval } from "./types";
-
-export async function fetchOpamp(): Promise<OpAmpResult> {
-  return jsonOrThrow<OpAmpResult>(await fetch("/api/opamp"));
-}
-export async function fetchOpampStudy(): Promise<OpAmpStudy> {
-  return jsonOrThrow<OpAmpStudy>(await fetch("/api/opamp/study?seeds=4"));
-}
-export async function fetchPreflight(): Promise<Preflight> {
-  return jsonOrThrow<Preflight>(await fetch("/api/opamp/preflight"));
-}
-export async function fetchSpectreEval(): Promise<SpectreEval> {
-  return jsonOrThrow<SpectreEval>(await fetch("/api/opamp/spectre-eval"));
-}
-
-import type { AdaptResponse } from "./types";
-
-export async function adaptProcess(nl: string): Promise<AdaptResponse> {
-  return jsonOrThrow<AdaptResponse>(
-    await fetch("/api/adapt", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nl }),
-    }),
-  );
-}
-
-import type { SurrogateData, SkillData, BridgeData, BodeData, AgentResp } from "./types";
-
-export const fetchSurrogate = () => fetch("/api/surrogate").then((r) => r.json() as Promise<SurrogateData>);
-export const fetchSkill = () => fetch("/api/skill").then((r) => r.json() as Promise<SkillData>);
-export const fetchBridge = () => fetch("/api/bridge").then((r) => r.json() as Promise<BridgeData>);
-export const fetchOpampBode = () => fetch("/api/opamp/bode").then((r) => r.json() as Promise<BodeData>);
-export async function askAgent(prompt: string): Promise<AgentResp> {
-  return jsonOrThrow<AgentResp>(await fetch("/api/agent", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
-  }));
-}
-
-import type { TcoilGeom } from "./types";
-
-export async function geomTcoil(b: {
+// --- RF / process / surrogate --------------------------------------------------
+export const fetchTcoil = () => runJob<TcoilData>("tcoil", {});
+export const evalTcoil = (L: number, k: number, Cb: number) =>
+  http<TcoilCurve>("/api/tcoil/eval", { json: { L, k, Cb } });
+export const geomTcoil = (b: {
   turns: number; width: number; spacing: number; inner: number;
   r_ohm: number; cl_ff: number; cb: number;
-}): Promise<TcoilGeom> {
-  return jsonOrThrow<TcoilGeom>(await fetch("/api/tcoil/geometry", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(b),
-  }));
-}
+}) => http<TcoilGeom>("/api/tcoil/geometry", { json: b });
+export const adaptProcess = (nl: string) =>
+  runJob<AdaptResponse>("adapt", { nl });
+export const processEffects = (nl: string, tech: Record<string, number>) =>
+  runJob<ProcessEffects>("process/effects", { nl, tech });
+export const fetchSurrogate = () =>
+  runJob<SurrogateData>("surrogate", {});
 
-import type { ProcessEffects } from "./types";
-
-export async function processEffects(nl: string, tech: Record<string, number>): Promise<ProcessEffects> {
-  return jsonOrThrow<ProcessEffects>(await fetch("/api/process/effects", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nl, tech }),
-  }));
-}
-
-import type { NgspiceEval } from "./types";
-
-export const fetchNgspiceEval = (model: "generic" | "sky130" = "generic") =>
-  fetch(`/api/opamp/ngspice-eval?model=${model}`).then((r) => r.json() as Promise<NgspiceEval>);
-
-import type { PVTData } from "./types";
-
-export const fetchPVT = (full = false) =>
-  fetch(`/api/pvt?full=${full}`).then((r) => r.json() as Promise<PVTData>);
-
-import type { FloorplanComponent, FloorplanData } from "./types";
-
-export const fetchFloorplanScenario = () =>
-  fetch("/api/floorplan/scenario").then((r) => r.json() as Promise<FloorplanData>);
-
-export async function routeFloorplan(
-  width: number, height: number, components: FloorplanComponent[], optimize: boolean,
-): Promise<FloorplanData> {
-  return jsonOrThrow<FloorplanData>(
-    await fetch("/api/floorplan/route", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ width, height, components, optimize }),
-    }),
-  );
-}
-
-import type { ScenarioCase, ScenarioData, CCCompare } from "./types";
-
-export const fetchScenarioCases = () =>
-  fetch("/api/scenarios").then((r) => r.json() as Promise<{ cases: ScenarioCase[] }>);
-export const fetchScenario = (key: string) =>
-  fetch(`/api/scenarios/${key}`).then((r) => r.json() as Promise<ScenarioData>);
-export const fetchCommonCentroid = (rows = 4, cols = 4) =>
-  fetch(`/api/common-centroid?rows=${rows}&cols=${cols}`).then((r) => r.json() as Promise<CCCompare>);
-
-import type { PPAData } from "./types";
-
-export const fetchPPA = (wPower: number, wArea: number, wPerf: number, seed = 0) =>
-  fetch(`/api/ppa?w_power=${wPower}&w_area=${wArea}&w_perf=${wPerf}&seed=${seed}`)
-    .then((r) => r.json() as Promise<PPAData>);
-
-import type { FlowData } from "./types";
-
-export const fetchFlow = (place: "sa" | "random", seed = 0, analog = false) =>
-  fetch(`/api/flow?place=${place}&seed=${seed}&analog=${analog}`).then((r) => r.json() as Promise<FlowData>);
-
-import type { FullFlowData } from "./types";
-
-export const fetchFullFlow = (place: "sa" | "random", seed = 0, sky130 = false, sweep = 0) =>
-  fetch(`/api/full-flow?place=${place}&seed=${seed}&sky130=${sky130}&sweep=${sweep}`)
-    .then((r) => r.json() as Promise<FullFlowData>);
-
-import type { GdsExport } from "./types";
-
-export const fetchGds = (place: "sa" | "random", seed = 0) =>
-  fetch(`/api/flow/gds?place=${place}&seed=${seed}`).then((r) => r.json() as Promise<GdsExport>);
-
-import type { KlayoutDrc } from "./types";
-
-export const fetchKlayoutDrc = (place: "sa" | "random", seed = 0) =>
-  fetch(`/api/flow/drc-klayout?place=${place}&seed=${seed}`).then((r) => r.json() as Promise<KlayoutDrc>);
-
-import type { LvsResult, AntennaResult, EmResult, LdeResult } from "./types";
-
-export const fetchLvs = () => fetch("/api/lvs").then((r) => r.json() as Promise<LvsResult>);
-export const fetchAntenna = () => fetch("/api/antenna").then((r) => r.json() as Promise<AntennaResult>);
-export const fetchEm = () => fetch("/api/em").then((r) => r.json() as Promise<EmResult>);
-export const fetchLde = () => fetch("/api/lde").then((r) => r.json() as Promise<LdeResult>);
-
-import type { LayoutShapes } from "./types";
-
-export const fetchLayoutShapes = (which: "ota" | "mirror" | "diffpair" = "ota") =>
-  fetch(`/api/layout/shapes?which=${which}`).then((r) => r.json() as Promise<LayoutShapes>);
+// --- Virtuoso bridge / agent ---------------------------------------------------
+export const fetchSkill = () => runJob<SkillData>("skill", {});
+export const fetchBridge = () => http<BridgeData>("/api/bridge");
+export const askAgent = (prompt: string) => http<AgentResp>("/api/agent", { json: { prompt } });
