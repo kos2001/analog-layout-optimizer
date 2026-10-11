@@ -19,7 +19,7 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 
 from .opamp import evaluate_opamp
-from .opamp_opt import de_log_refine
+from .opamp_opt import GAIN_MIN, GBW_MIN, PM_MIN, de_log_refine
 from .placement import run_flow
 from .schematic import two_stage_ota
 from .runlog import Profiler, merge_stats, stage
@@ -35,17 +35,63 @@ def _stage(name: str, status: str, detail: str) -> dict:
     return {"name": name, "status": status, "detail": detail}
 
 
+# Real-silicon stability floor; below it the amplifier may ring or oscillate.
+STABLE_PM_DEG = 45.0
+
+
+def _silicon_check(ss) -> tuple[dict, str, str]:
+    """Judge a SKY130 (real BSIM) evaluation against the sizing targets.
+
+    Like post-layout PM, silicon performance is a closure check rather than the
+    tape-out gate: "pass" only when gain, GBW and PM all meet the targets the
+    sizing promised; otherwise "warn" with every miss listed, and PM below
+    STABLE_PM_DEG called out as unstable. An unmeasured GBW/PM (no 0 dB
+    crossing in the sweep) is never a pass.
+    """
+    m = ss.summary(pm_digits=1)
+    silicon = {"model": "sky130-tt", "gain_db": m["gain_db"],
+               "gbw_mhz": m["gbw_mhz"], "pm_deg": m["pm_deg"]}
+    if ss.unmeasured():
+        silicon.update(unmeasured=ss.unmeasured(), meetsSpec=False, misses=[])
+        return silicon, "warn", (f"{m['gain_db']} dB · GBW/PM not measured "
+                                 "(no 0 dB crossing in the AC sweep)")
+    targets = (("gain_db", "gain", m["gain_db"], GAIN_MIN, "dB"),
+               ("gbw_mhz", "GBW", m["gbw_mhz"], GBW_MIN / 1e6, "MHz"),
+               ("pm_deg", "PM", m["pm_deg"], PM_MIN, "°"))
+    misses = [{"metric": key, "value": v, "target": t}
+              for key, _, v, t, _ in targets if v < t]
+    silicon.update(meetsSpec=not misses, misses=misses)
+    measured = f"{m['gain_db']} dB · {m['gbw_mhz']} MHz · {m['pm_deg']}° (real BSIM)"
+    if not misses:
+        return silicon, "pass", measured
+    below = ", ".join(f"{label} {v:g} < {t:g} {unit}"
+                      for key, label, v, t, unit in targets if v < t)
+    unstable = m["pm_deg"] < STABLE_PM_DEG
+    return silicon, "warn", (f"{measured} · below spec: {below}"
+                             + (" · unstable (PM < 45°)" if unstable else ""))
+
+
 def rank_candidates(results: list[dict]) -> int:
     """Index of the best full-flow run by sign-off ranking.
 
-    Order: PASS verdict > fewest unrouted nets > LVS clean > fewest DRC
-    errors/warnings > highest post-layout phase margin. This replaces
-    "pick a random seed and hope" with a deterministic best-of-N choice.
+    Order: PASS verdict > silicon meets spec (SKY130 runs only) > fewest
+    unrouted nets > LVS clean > fewest DRC errors/warnings > highest
+    post-layout phase margin. This replaces "pick a random seed and hope"
+    with a deterministic best-of-N choice.
     """
+    def silicon_rank(r: dict) -> int:
+        si = r.get("silicon")
+        if not si or si.get("meetsSpec"):
+            return 0                       # not run, or meets every target
+        if si.get("unmeasured"):
+            return 1_000                   # nothing measured is worst
+        return len(si.get("misses") or ()) or 1
+
     def key(r: dict):
         so, rt, pl = r["signoff"], r["routing"], r["postlayout"]
         return (
             0 if r["verdict"] == "PASS" else 1,
+            silicon_rank(r),
             len(rt["failed"]),
             0 if so["lvs"]["clean"] else 1,
             so["drcErrors"],
@@ -196,20 +242,8 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
             try:
                 with stage("silicon"):
                     ss = ngspice_evaluate(d.params, sky130_model())
-                m = ss.summary(pm_digits=1)
-                silicon = {"model": "sky130-tt", "gain_db": m["gain_db"],
-                           "gbw_mhz": m["gbw_mhz"], "pm_deg": m["pm_deg"]}
-                if ss.unmeasured():
-                    # No 0 dB crossing in the sweep: GBW/PM unknown, so this
-                    # stage can't claim a pass.
-                    silicon["unmeasured"] = ss.unmeasured()
-                    stages.append(_stage("Silicon verify (SKY130)", "warn",
-                                         f"{m['gain_db']} dB · GBW/PM not measured "
-                                         "(no 0 dB crossing in the AC sweep)"))
-                else:
-                    stages.append(_stage("Silicon verify (SKY130)", "pass",
-                                         f"{silicon['gain_db']} dB · {silicon['gbw_mhz']} MHz · "
-                                         f"{silicon['pm_deg']}° (real BSIM)"))
+                silicon, status, detail = _silicon_check(ss)
+                stages.append(_stage("Silicon verify (SKY130)", status, detail))
             except NgspiceUnavailable as e:
                 stages.append(_stage("Silicon verify (SKY130)", "warn", str(e)))
         else:
