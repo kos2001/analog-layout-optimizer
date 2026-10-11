@@ -6,19 +6,40 @@ no logic is duplicated for the web. Endpoints:
   GET  /api/config    defaults, search bounds, PDK rules, fixed config
   POST /api/evaluate  params -> layout rects + area + DRC violations (live sliders)
   POST /api/optimize  run optimization -> per-generation frames + final best
+
+Execution model (see layout_opt/jobs.py): heavy endpoints (optimizers, full
+flow, simulators) are ``async`` and run their engine call in a shared worker
+*process* pool, so a long run never blocks the event loop or starves the live
+slider endpoints of the GIL. Results are cached by provenance key (request +
+engine source hash [+ external tool fingerprint]); concurrent identical
+requests share one in-flight computation. Response shapes are unchanged.
+
+  POST   /api/jobs              {"kind", "params"} -> 202 {"job_id", "status", ...}
+  GET    /api/jobs/{id}         status, timings, stage progress, result when done
+  GET    /api/jobs/{id}/events  Server-Sent Events: status + stage progress
+  DELETE /api/jobs/{id}         cancel a queued job (409 once running/finished)
+  GET    /api/health            liveness + executor/cache/job stats
 """
 
 from __future__ import annotations
 
+import asyncio
+import inspect
+import json
+import os
 import sys
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable, get_type_hints
 
 # Make the layout_opt package importable (repo root is two levels up).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from layout_opt.evaluate import EvalResult, evaluate
 from layout_opt.generator import (
@@ -65,8 +86,37 @@ from layout_opt.routing import (
     routed_layout,
     routing_violations,
 )
+from layout_opt.flow_e2e import select_best
+from layout_opt.jobs import (
+    TERMINAL, ComputeService, JobRegistry, Plan, QueueFull, await_shared,
+)
+from layout_opt.provenance import cache_key, code_version, digest, file_digest, tool_fingerprint
 
-app = FastAPI(title="Analog Layout Optimizer", version="1.0")
+# Engine sources + this file (payload shaping lives here) -> cache-key version.
+CODE_VERSION = digest([code_version(), file_digest(__file__)])[:16]
+
+SERVICE = ComputeService(warm_module=__name__)
+JOBS = JobRegistry(SERVICE)
+
+
+def configure_service(**kw) -> None:
+    """(Re)build the compute service + job registry, e.g. ``mode="thread"`` in tests."""
+    global SERVICE, JOBS
+    SERVICE.shutdown()
+    registry_kw = {k: kw.pop(k) for k in ("max_running", "max_jobs", "max_queued") if k in kw}
+    SERVICE = ComputeService(warm_module=__name__, **kw)
+    JOBS = JobRegistry(SERVICE, **registry_kw)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    if os.environ.get("ALO_PREWARM", "1") != "0":
+        SERVICE.warm()                       # spawn + import in the background
+    yield
+    SERVICE.shutdown()
+
+
+app = FastAPI(title="Analog Layout Optimizer", version="1.0", lifespan=_lifespan)
 
 # Vite dev server runs on a different port; allow it during development.
 app.add_middleware(
@@ -79,6 +129,74 @@ app.add_middleware(
 CFG = DiffPairConfig()
 RULES = PDKRules()
 RRULES = RoutingRules()
+
+
+# --------------------------------------------------------------------------
+# Job kinds: named, picklable engine calls (shared by endpoints and /api/jobs)
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class _Kind:
+    fn: Callable              # top-level -> pickles by reference into workers
+    model: type[BaseModel]    # validates/coerces params, applies defaults
+    env: bool                 # result depends on external tools/PDK
+
+
+KINDS: dict[str, _Kind] = {}
+
+
+def _kind(name: str, model: type[BaseModel] | None = None, env: bool = False):
+    def deco(fn):
+        if model is None:
+            hints = get_type_hints(fn)
+            fields = {p.name: (hints.get(p.name, Any),
+                               ... if p.default is inspect.Parameter.empty else p.default)
+                      for p in inspect.signature(fn).parameters.values()}
+            m = create_model(f"{fn.__name__}Params",
+                             __config__=ConfigDict(extra="forbid"), **fields)
+        else:   # endpoint body model, but strict about unknown keys for jobs
+            m = type(f"{model.__name__}Job", (model,),
+                     {"model_config": ConfigDict(extra="forbid"), "__module__": __name__})
+        KINDS[name] = _Kind(fn, m, env)
+        return fn
+    return deco
+
+
+def _cacheable(result) -> bool:
+    """Never cache a transient answer (tool/PDK not reachable right now)."""
+    if not isinstance(result, dict):
+        return True
+    return "error" not in result and "unavailable" not in str(result.get("status", ""))
+
+
+def _plan(kind: str, params: dict) -> Plan:
+    """Validated params -> provenance key + cache-aware submission."""
+    spec = KINDS[kind]
+    if kind == "full-flow":
+        params = {**params, "sweep": max(0, min(params["sweep"], 16))}
+    key = cache_key(kind, params, version=CODE_VERSION,
+                    env=tool_fingerprint() if spec.env else None)
+    if kind == "full-flow" and params["sweep"] > 0:
+        # Fan the sweep out as independent (individually cached) seeds across
+        # the shared pool, then rank in-process: no nested pools.
+        seeds = list(range(params["seed"], params["seed"] + params["sweep"]))
+        subs = [_plan(kind, {**params, "seed": s, "sweep": 0}) for s in seeds]
+        return Plan(kind, params, key,
+                    lambda: SERVICE.submit_composite(
+                        key, [p.start for p in subs],
+                        lambda results: select_best(seeds, results), _cacheable),
+                    [(p.key, {"seed": s}) for p, s in zip(subs, seeds)])
+    return Plan(kind, params, key,
+                lambda: SERVICE.submit(key, spec.fn, params, _cacheable), [(key, {})])
+
+
+def _validate(kind: str, raw: dict) -> dict:
+    return KINDS[kind].model(**raw).model_dump()
+
+
+async def _offload(kind: str, **params) -> dict:
+    """Run a heavy kind off the event loop (worker pool), cached + shared."""
+    fut, _how = _plan(kind, _validate(kind, params)).start()
+    return await await_shared(fut)
 
 
 # --------------------------------------------------------------------------
@@ -237,10 +355,10 @@ def _routed_payload(p: DesignParams, rp: RoutingParams) -> dict:
     }
 
 
-@app.post("/api/joint")
-def post_joint(body: OptimizeIn) -> dict:
+@_kind("joint", model=OptimizeIn)
+def _compute_joint(seed: int = 0, maxiter: int = 60) -> dict:
     res, frames = optimize_joint_trajectory(
-        cfg=CFG, rules=RULES, rrules=RRULES, seed=body.seed, maxiter=body.maxiter
+        cfg=CFG, rules=RULES, rrules=RRULES, seed=seed, maxiter=maxiter
     )
     frame_payloads = []
     for i, (p, rp) in enumerate(frames):
@@ -278,10 +396,15 @@ def post_joint(body: OptimizeIn) -> dict:
     }
 
 
-@app.post("/api/optimize")
-def post_optimize(body: OptimizeIn) -> dict:
+@app.post("/api/joint")
+async def post_joint(body: OptimizeIn) -> dict:
+    return await _offload("joint", **body.model_dump())
+
+
+@_kind("optimize", model=OptimizeIn)
+def _compute_optimize(seed: int = 0, maxiter: int = 60) -> dict:
     opt, frames = optimize_trajectory(
-        cfg=CFG, rules=RULES, seed=body.seed, maxiter=body.maxiter
+        cfg=CFG, rules=RULES, seed=seed, maxiter=maxiter
     )
     frame_payloads = []
     for i, fp in enumerate(frames):
@@ -310,6 +433,11 @@ def post_optimize(body: OptimizeIn) -> dict:
     }
 
 
+@app.post("/api/optimize")
+async def post_optimize(body: OptimizeIn) -> dict:
+    return await _offload("optimize", **body.model_dump())
+
+
 # --------------------------------------------------------------------------
 # Comparator maze routing
 # --------------------------------------------------------------------------
@@ -332,8 +460,8 @@ def _maze_solution_payload(grid, nets, sol) -> dict:
     }
 
 
-@app.get("/api/maze")
-def get_maze() -> dict:
+@_kind("maze")
+def _compute_maze() -> dict:
     grid, nets = build_comparator()
     naive = route_all(grid, nets, list(nets.keys()))
     best = optimize_net_order(grid, nets)
@@ -354,13 +482,23 @@ def get_maze() -> dict:
     }
 
 
+@app.get("/api/maze")
+async def get_maze() -> dict:
+    return await _offload("maze")
+
+
 # --------------------------------------------------------------------------
 # Interactive floorplan: drag components -> dynamic maze routing
 # --------------------------------------------------------------------------
+@_kind("floorplan/scenario")
+def _compute_floorplan_scenario() -> dict:
+    return route_components(GRID_W, GRID_H, default_floorplan(), optimize=True)
+
+
 @app.get("/api/floorplan/scenario")
 def get_floorplan_scenario() -> dict:
     """Default comparator placement + its initial routing."""
-    return route_components(GRID_W, GRID_H, default_floorplan(), optimize=True)
+    return _compute_floorplan_scenario()
 
 
 class FloorplanIn(BaseModel):
@@ -385,61 +523,100 @@ def list_scenarios() -> dict:
     return {"cases": _scn.CASES}
 
 
-@app.get("/api/scenarios/{key}")
-def get_scenario(key: str) -> dict:
+@_kind("scenario")
+def _compute_scenario(key: str) -> dict:
     if key not in {c["key"] for c in _scn.CASES}:
         return {"error": f"unknown scenario {key}"}
     return _scn.run_case(key)
 
 
-@app.get("/api/common-centroid")
-def get_common_centroid(rows: int = 4, cols: int = 4) -> dict:
+@app.get("/api/scenarios/{key}")
+def get_scenario(key: str) -> dict:
+    return _compute_scenario(key)
+
+
+@_kind("common-centroid")
+def _compute_common_centroid(rows: int = 4, cols: int = 4) -> dict:
     rows = max(2, min(rows, 8)); cols = max(2, min(cols, 8))
     return _cc.compare(rows, cols)
 
 
-@app.get("/api/ppa")
-def get_ppa(w_power: float = 1.0, w_area: float = 1.0, w_perf: float = 1.0,
-            pop: int = 80, gens: int = 40, seed: int = 0) -> dict:
-    """OTA PPA Pareto front (NSGA-II) + the design matching a P/P/A preference."""
+@app.get("/api/common-centroid")
+def get_common_centroid(rows: int = 4, cols: int = 4) -> dict:
+    return _compute_common_centroid(rows, cols)
+
+
+@_kind("ppa")
+def _compute_ppa(w_power: float = 1.0, w_area: float = 1.0, w_perf: float = 1.0,
+                 pop: int = 80, gens: int = 40, seed: int = 0) -> dict:
     pop = max(20, min(pop, 160)); gens = max(5, min(gens, 80))
     return _ppa.run_ppa(pop_size=pop, generations=gens, seed=seed,
                         weights=(w_power, w_area, w_perf))
 
 
-@app.get("/api/flow")
-def get_flow(place: str = "sa", seed: int = 0, analog: bool = False) -> dict:
-    """Schematic -> placement -> routing, connected by one netlist."""
+@app.get("/api/ppa")
+async def get_ppa(w_power: float = 1.0, w_area: float = 1.0, w_perf: float = 1.0,
+                  pop: int = 80, gens: int = 40, seed: int = 0) -> dict:
+    """OTA PPA Pareto front (NSGA-II) + the design matching a P/P/A preference."""
+    return await _offload("ppa", w_power=w_power, w_area=w_area, w_perf=w_perf,
+                          pop=pop, gens=gens, seed=seed)
+
+
+@_kind("flow")
+def _compute_flow(place: str = "sa", seed: int = 0, analog: bool = False) -> dict:
     place = place if place in ("sa", "random") else "sa"
     return _flow.run_flow(place=place, seed=seed, analog_aware=analog)
 
 
+@app.get("/api/flow")
+def get_flow(place: str = "sa", seed: int = 0, analog: bool = False) -> dict:
+    """Schematic -> placement -> routing, connected by one netlist."""
+    return _compute_flow(place, seed, analog)
+
+
+@_kind("full-flow", env=True)
+def _compute_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False,
+                       sweep: int = 0) -> dict:
+    from layout_opt.flow_e2e import run_best_of, run_end_to_end
+    place = place if place in ("sa", "random") else "sa"
+    if sweep > 0:   # direct calls only; the service fans sweeps out via _plan
+        seeds = range(seed, seed + min(sweep, 16))
+        return run_best_of(place=place, seeds=seeds, sky130=sky130, workers=1)
+    return run_end_to_end(place=place, seed=seed, sky130=sky130)
+
+
 @app.get("/api/full-flow")
-def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False,
-                  sweep: int = 0) -> dict:
+async def get_full_flow(place: str = "sa", seed: int = 0, sky130: bool = False,
+                        sweep: int = 0) -> dict:
     """One-click end-to-end: sizing -> P&R -> sign-off -> post-layout -> [silicon].
 
     sweep>0 runs `sweep` seeds (seed..seed+sweep-1) and returns the best run
-    by sign-off ranking instead of gambling on a single seed.
+    by sign-off ranking instead of gambling on a single seed. Seeds run in
+    parallel worker processes and are cached individually.
     """
-    from layout_opt.flow_e2e import run_best_of, run_end_to_end
-    place = place if place in ("sa", "random") else "sa"
-    if sweep > 0:
-        seeds = range(seed, seed + min(sweep, 16))
-        return run_best_of(place=place, seeds=seeds, sky130=sky130)
-    return run_end_to_end(place=place, seed=seed, sky130=sky130)
+    return await _offload("full-flow", place=place, seed=seed, sky130=sky130, sweep=sweep)
+
+
+@_kind("layout/shapes")
+def _compute_layout_shapes(which: str = "ota") -> dict:
+    from layout_opt.layout_view import layout_shapes
+    return layout_shapes(which if which in ("ota", "mirror", "diffpair") else "ota")
 
 
 @app.get("/api/layout/shapes")
 def get_layout_shapes(which: str = "ota") -> dict:
     """Per-SKY130-layer polygons of a transistor layout, for the in-browser viewer."""
-    from layout_opt.layout_view import layout_shapes
-    return layout_shapes(which if which in ("ota", "mirror", "diffpair") else "ota")
+    return _compute_layout_shapes(which)
 
 
 @app.get("/api/flow/gds")
 def get_flow_gds(place: str = "sa", seed: int = 0) -> dict:
     """Export the placed+routed OTA to GDSII (base64) + layer stats."""
+    return _compute_flow_gds(place, seed)
+
+
+@_kind("flow/gds")
+def _compute_flow_gds(place: str = "sa", seed: int = 0) -> dict:
     import base64
     from layout_opt.gds import flow_to_gds_bytes
     place = place if place in ("sa", "random") else "sa"
@@ -453,6 +630,11 @@ def get_flow_gds(place: str = "sa", seed: int = 0) -> dict:
 @app.get("/api/lvs")
 def get_lvs(cell: str = "ota") -> dict:
     """Transistor-level layout synthesis + real KLayout LVS (OTA / mirror / diff pair)."""
+    return _compute_lvs(cell)
+
+
+@_kind("lvs", env=True)
+def _compute_lvs(cell: str = "ota") -> dict:
     from layout_opt.klayout_lvs import lvs_current_mirror, lvs_ota, lvs_diffpair
     if cell == "mirror":
         return lvs_current_mirror()
@@ -461,23 +643,38 @@ def get_lvs(cell: str = "ota") -> dict:
     return lvs_ota()
 
 
+@_kind("antenna")
+def _compute_antenna() -> dict:
+    from layout_opt.antenna import antenna_ota
+    return antenna_ota()
+
+
 @app.get("/api/antenna")
 def get_antenna() -> dict:
     """Per-net antenna ratio (metal/gate area) on the transistor-level OTA layout."""
-    from layout_opt.antenna import antenna_ota
-    return antenna_ota()
+    return _compute_antenna()
+
+
+@_kind("em")
+def _compute_em() -> dict:
+    from layout_opt.em import em_check
+    return em_check()
 
 
 @app.get("/api/em")
 def get_em() -> dict:
     """EM DC current-density check on the OTA (currents from sizing, widths from layout)."""
-    from layout_opt.em import em_check
-    return em_check()
+    return _compute_em()
 
 
 @app.get("/api/lde")
 def get_lde() -> dict:
     """Input-pair STI/LOD mismatch vs dummy count (common-centroid array)."""
+    return _compute_lde()
+
+
+@_kind("lde")
+def _compute_lde() -> dict:
     from layout_opt.lde import diffpair_lde
     from layout_opt.device_layout import device_extent
     pitch = device_extent(1.0, 0.15)[0] + 0.9
@@ -487,14 +684,24 @@ def get_lde() -> dict:
 @app.get("/api/flow/drc-klayout")
 def get_flow_drc_klayout(place: str = "sa", seed: int = 0) -> dict:
     """Real DRC on the exported GDS with the KLayout engine (met1/met2 width+space)."""
+    return _compute_flow_drc_klayout(place, seed)
+
+
+@_kind("flow/drc-klayout", env=True)
+def _compute_flow_drc_klayout(place: str = "sa", seed: int = 0) -> dict:
     from layout_opt.klayout_drc import run_drc_on_flow
     place = place if place in ("sa", "random") else "sa"
     return run_drc_on_flow(_flow.run_flow(place=place, seed=seed))
 
 
 @app.get("/api/pvt")
-def get_pvt(seed: int = 0, full: bool = False) -> dict:
+async def get_pvt(seed: int = 0, full: bool = False) -> dict:
     """PVT corner sweep on real SKY130 silicon (slow: ~15-18 s per corner)."""
+    return await _offload("pvt", seed=seed, full=full)
+
+
+@_kind("pvt", env=True)
+def _compute_pvt(seed: int = 0, full: bool = False) -> dict:
     from layout_opt.pvt import run_pvt, full_grid
     from layout_opt.opamp_opt import de_log_refine
     p = de_log_refine(seed=seed).params
@@ -525,7 +732,12 @@ class TCoilIn(BaseModel):
 
 
 @app.get("/api/tcoil")
-def get_tcoil() -> dict:
+async def get_tcoil() -> dict:
+    return await _offload("tcoil")
+
+
+@_kind("tcoil")
+def _compute_tcoil() -> dict:
     none = TCoilParams(0.0, 0.0, 0.0)
     shunt = TCoilParams(0.5, 0.0, 0.0)
     flat = optimize_tcoil(peak_limit_db=0.1, seed=0).params
@@ -578,13 +790,23 @@ def _opamp_design_payload(seed: int = 0) -> dict:
     }
 
 
-@app.get("/api/opamp")
-def get_opamp() -> dict:
+@_kind("opamp")
+def _compute_opamp() -> dict:
     return _opamp_design_payload(0)
 
 
+@app.get("/api/opamp")
+def get_opamp() -> dict:
+    return _compute_opamp()
+
+
 @app.get("/api/opamp/study")
-def get_opamp_study(seeds: int = 4) -> dict:
+async def get_opamp_study(seeds: int = 4) -> dict:
+    return await _offload("opamp/study", seeds=seeds)
+
+
+@_kind("opamp/study")
+def _compute_opamp_study(seeds: int = 4) -> dict:
     import numpy as np
     out = []
     for name, fn in STRATEGIES.items():
@@ -610,7 +832,12 @@ def get_opamp_preflight() -> dict:
 
 
 @app.get("/api/opamp/spectre-eval")
-def get_opamp_spectre_eval(seed: int = 0) -> dict:
+async def get_opamp_spectre_eval(seed: int = 0) -> dict:
+    return await _offload("opamp/spectre-eval", seed=seed)
+
+
+@_kind("opamp/spectre-eval", env=True)
+def _compute_opamp_spectre_eval(seed: int = 0) -> dict:
     cand = de_log_refine(seed=seed).params
     a = evaluate_opamp(cand)
     out = {
@@ -654,13 +881,18 @@ def _routed_layout_payload(device, routing, cfg, rrules) -> dict:
 
 
 @app.post("/api/adapt")
-def post_adapt(body: AdaptIn) -> dict:
+async def post_adapt(body: AdaptIn) -> dict:
+    return await _offload("adapt", **body.model_dump())
+
+
+@_kind("adapt", model=AdaptIn)
+def _compute_adapt(nl: str = "", overrides: dict | None = None) -> dict:
     from layout_opt.process_change import (
         ProcessOverrides, apply_overrides, parse_process_nl,
     )
     from layout_opt.joint import optimize_joint
 
-    ov = ProcessOverrides(body.overrides) if body.overrides else parse_process_nl(body.nl)
+    ov = ProcessOverrides(overrides) if overrides else parse_process_nl(nl)
     base = (DiffPairConfig(), PDKRules(), RoutingRules())
     new = apply_overrides(ov)
 
@@ -694,7 +926,12 @@ def post_adapt(body: AdaptIn) -> dict:
 # Surrogate-assisted optimization (active learning) visualization
 # --------------------------------------------------------------------------
 @app.get("/api/surrogate")
-def get_surrogate(target: float = 3.5) -> dict:
+async def get_surrogate(target: float = 3.5) -> dict:
+    return await _offload("surrogate", target=target)
+
+
+@_kind("surrogate")
+def _compute_surrogate(target: float = 3.5) -> dict:
     from layout_opt.surrogate_opt import surrogate_assisted_optimize
     r = surrogate_assisted_optimize(fom_target=target, n_init=10, n_holdout=8,
                                     rounds=6, seed=0, de_maxiter=30)
@@ -721,7 +958,12 @@ def get_surrogate(target: float = 3.5) -> dict:
 # SKILL viewer — the actual virtuoso-bridge output for the optimized cell
 # --------------------------------------------------------------------------
 @app.get("/api/skill")
-def get_skill() -> dict:
+async def get_skill() -> dict:
+    return await _offload("skill")
+
+
+@_kind("skill")
+def _compute_skill() -> dict:
     from layout_opt.skill import emit_skill
     from layout_opt.joint import optimize_joint
     j = optimize_joint(cfg=CFG, rules=RULES, rrules=RRULES, seed=0, maxiter=120)
@@ -808,6 +1050,11 @@ def get_bridge() -> dict:
 # --------------------------------------------------------------------------
 @app.get("/api/opamp/bode")
 def get_opamp_bode(seed: int = 0) -> dict:
+    return _compute_opamp_bode(seed)
+
+
+@_kind("opamp/bode")
+def _compute_opamp_bode(seed: int = 0) -> dict:
     from layout_opt.opamp import ac_response
     cand = de_log_refine(seed=seed).params
     freqs = list(np.logspace(2, 10, 200))    # 100 Hz .. 10 GHz
@@ -905,19 +1152,30 @@ class EffectsIn(BaseModel):
 
 
 @app.post("/api/process/effects")
-def post_process_effects(body: EffectsIn) -> dict:
+async def post_process_effects(body: EffectsIn) -> dict:
+    return await _offload("process/effects", **body.model_dump())
+
+
+@_kind("process/effects", model=EffectsIn)
+def _compute_process_effects(nl: str = "", overrides: dict | None = None,
+                             tech: dict | None = None) -> dict:
     from layout_opt.process_change import (
         ProcessOverrides, parse_process_nl, process_effects,
     )
-    ov = ProcessOverrides(body.overrides) if body.overrides else parse_process_nl(body.nl)
-    return process_effects(ov, body.tech or None, maxiter=120)
+    ov = ProcessOverrides(overrides) if overrides else parse_process_nl(nl)
+    return process_effects(ov, tech or None, maxiter=120)
 
 
 # --------------------------------------------------------------------------
 # Open-source closed loop: verify a candidate with ngspice (vs analytic)
 # --------------------------------------------------------------------------
 @app.get("/api/opamp/ngspice-eval")
-def get_opamp_ngspice_eval(seed: int = 0, model: str = "generic") -> dict:
+async def get_opamp_ngspice_eval(seed: int = 0, model: str = "generic") -> dict:
+    return await _offload("opamp/ngspice-eval", seed=seed, model=model)
+
+
+@_kind("opamp/ngspice-eval", env=True)
+def _compute_opamp_ngspice_eval(seed: int = 0, model: str = "generic") -> dict:
     from layout_opt.ngspice_backend import (
         GENERIC_NGSPICE, NgspiceUnavailable, ngspice_available, ngspice_evaluate,
         sky130_model, sky130_available,
@@ -948,3 +1206,104 @@ def get_opamp_ngspice_eval(seed: int = 0, model: str = "generic") -> dict:
         out["status"] = "ngspice_unavailable"
         out["error"] = str(e)
     return out
+
+
+# --------------------------------------------------------------------------
+# Async jobs: submit -> 202, poll / SSE, cancel while queued
+# --------------------------------------------------------------------------
+class JobIn(BaseModel):
+    kind: str
+    params: dict = {}
+
+
+def _job_or_404(job_id: str):
+    job = JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job {job_id} (finished jobs are evicted oldest-first)")
+    return job
+
+
+@app.post("/api/jobs", status_code=202)
+async def post_job(body: JobIn) -> dict:
+    """Queue any registered kind. An identical request (same provenance key)
+    while one is queued/running returns that job (``deduplicated: true``); a
+    request whose result is cached returns a job that is already ``done``.
+    """
+    if body.kind not in KINDS:
+        raise HTTPException(422, {"error": f"unknown kind {body.kind!r}", "kinds": sorted(KINDS)})
+    try:
+        params = _validate(body.kind, body.params)
+    except ValidationError as e:
+        raise HTTPException(422, e.errors(include_url=False, include_context=False)) from e
+    try:
+        job, dedup = JOBS.submit(_plan(body.kind, params))
+    except QueueFull as e:
+        raise HTTPException(429, f"job queue full: {e}") from e
+    return {"job_id": job.id, "status": job.status, "kind": job.plan.kind,
+            "deduplicated": dedup, "cache": job.cache,
+            "links": {"self": f"/api/jobs/{job.id}", "events": f"/api/jobs/{job.id}/events"}}
+
+
+@app.get("/api/jobs")
+def list_jobs() -> dict:
+    return {"jobs": JOBS.list(), "counts": JOBS.counts()}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str) -> dict:
+    return _job_or_404(job_id).snapshot()
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str) -> dict:
+    job, cancelled = JOBS.cancel(job_id)
+    if job is None:
+        raise HTTPException(404, f"unknown job {job_id}")
+    if not cancelled:
+        raise HTTPException(409, f"job is {job.status}; only queued jobs can be cancelled")
+    return job.snapshot(include_result=False)
+
+
+def _sse(ev: dict) -> str:
+    return f"id: {ev['id']}\nevent: {ev['type']}\ndata: {json.dumps(ev['data'], default=str)}\n\n"
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def job_events(job_id: str, request: Request) -> StreamingResponse:
+    """SSE: replays past events, then streams status/progress until terminal."""
+    sub = JOBS.subscribe(job_id, asyncio.get_running_loop())
+    if sub is None:
+        raise HTTPException(404, f"unknown job {job_id}")
+    past, q = sub
+
+    def terminal(ev: dict) -> bool:
+        return ev["type"] == "status" and ev["data"]["status"] in TERMINAL
+
+    async def stream():
+        try:
+            for ev in past:
+                yield _sse(ev)
+                if terminal(ev):
+                    return
+            while True:
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    if await request.is_disconnected():
+                        return
+                    yield ": keep-alive\n\n"
+                    continue
+                yield _sse(ev)
+                if terminal(ev):
+                    return
+        finally:
+            JOBS.unsubscribe(job_id, q)
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/health")
+def get_health() -> dict:
+    return {"status": "ok", "version": CODE_VERSION, "executor": SERVICE.stats(),
+            "jobs": JOBS.counts(), "kinds": sorted(KINDS)}

@@ -46,7 +46,13 @@ def preflight() -> dict:
     try:
         from virtuoso_bridge.spectre.runner import SpectreSimulator
         sim = SpectreSimulator.from_env()
-        status["spectre"] = bool(sim.check_license())
+        # check_license() always returns a non-empty dict; readiness is its
+        # `ok` field (a bare bool(dict) would report ready with no Spectre)
+        lic = sim.check_license()
+        status["spectre"] = (lic.get("ok") is True if isinstance(lic, dict)
+                             else lic is True)
+        if isinstance(lic, dict) and lic.get("error"):
+            status["guidance"].append(f"Spectre license check: {lic['error']}")
     except Exception as e:  # noqa: BLE001
         status["guidance"].append(f"SpectreSimulator unavailable: {e}")
     if not status["bridge_env"]:

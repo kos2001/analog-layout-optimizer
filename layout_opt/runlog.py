@@ -64,6 +64,23 @@ class Profiler:
         if self.on_stage is not None:
             self.on_stage(st, wall)
 
+    def merge(self, other: StageStat) -> None:
+        """Fold a StageStat measured elsewhere (e.g. a worker process) into this run."""
+        st = self.stats.setdefault(other.name, StageStat(other.name))
+        st.calls += other.calls
+        st.wall_s += other.wall_s
+        st.cpu_s += other.cpu_s
+        st.peak_rss_mb = max(st.peak_rss_mb, other.peak_rss_mb)
+        if self.on_stage is not None:
+            self.on_stage(st, other.wall_s)
+
+
+def merge_stats(stats) -> None:
+    """Replay worker-process StageStats into every active Profiler (no-op if none)."""
+    for prof in list(_active):
+        for st in stats:
+            prof.merge(st)
+
 
 @contextmanager
 def stage(name: str):

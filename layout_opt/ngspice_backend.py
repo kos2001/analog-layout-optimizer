@@ -151,16 +151,28 @@ def render_netlist(p: OpAmpParams, model: NgspiceModel, out_path: str) -> str:
 
 
 def _parse_wrdata(text: str):
-    """ngspice `wrdata` AC output: rows of `freq vr freq vi` -> (freq, complex)."""
+    """ngspice `wrdata` AC output: rows of `freq vr freq vi` -> (freq, complex).
+
+    Leading non-numeric lines (a vector-name header) are skipped, but once data
+    has started a short/garbled row or a non-finite value (a diverged or
+    truncated run) raises NgspiceUnavailable instead of silently yielding a
+    partial sweep that would still produce plausible-looking specs.
+    """
     freq, vout = [], []
-    for line in text.splitlines():
+    for n, line in enumerate(text.splitlines(), 1):
         toks = line.split()
-        if len(toks) < 4:
+        if not toks:
             continue
         try:
+            if len(toks) < 4:
+                raise ValueError("short row")
             f = float(toks[0]); vr = float(toks[1]); vi = float(toks[-1])
         except ValueError:
-            continue
+            if not freq:
+                continue                 # header before the first data row
+            raise NgspiceUnavailable(f"incomplete ngspice AC output at line {n}: {line[:80]!r}")
+        if not all(math.isfinite(v) for v in (f, vr, vi)):
+            raise NgspiceUnavailable(f"non-finite ngspice AC output at line {n}: {line[:80]!r}")
         freq.append(f); vout.append(complex(vr, vi))
     return freq, vout
 
@@ -185,32 +197,50 @@ def ngspice_available() -> bool:
     return shutil.which("ngspice") is not None
 
 
-def ngspice_evaluate(p: OpAmpParams, model: NgspiceModel = GENERIC_NGSPICE, *,
-                     runner=None, work_dir: str | None = None) -> OpAmpSpecs:
-    """Run a real ngspice AC sweep and return specs (same contract as evaluate_opamp).
-
-    `runner(netlist_path) -> wrdata_text` lets tests inject a fake ngspice.
-    Raises NgspiceUnavailable if ngspice is missing or the run produces no data.
-    """
-    tmp = Path(work_dir or tempfile.mkdtemp(prefix="ota_ngspice_"))
-    tmp.mkdir(parents=True, exist_ok=True)
+def _run_ngspice(p: OpAmpParams, model: NgspiceModel, tmp: Path, runner,
+                 timeout: float) -> str:
+    """Write the netlist into *tmp*, run ngspice (or *runner*), return wrdata text."""
     out_file = tmp / "ac.txt"
     cir = tmp / "ota.cir"
     cir.write_text(render_netlist(p, model, str(out_file)))
 
     if runner is not None:
-        wrdata = runner(str(cir))
+        return runner(str(cir))
+    if not ngspice_available():
+        raise NgspiceUnavailable(
+            "ngspice not on PATH. Install: `brew install ngspice` (macOS) / "
+            "`apt install ngspice` (Linux), or use the IIC-OSIC-TOOLS docker."
+        )
+    # -n: skip the user's/local .spiceinit so a stray config can't change the
+    # numerics (the netlist carries every option it needs); -b: batch mode.
+    try:
+        proc = subprocess.run(["ngspice", "-n", "-b", str(cir)], cwd=tmp,
+                              capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise NgspiceUnavailable(f"ngspice timed out after {timeout:g} s") from e
+    if not out_file.exists():
+        raise NgspiceUnavailable(f"ngspice produced no output: {proc.stderr[-400:]}")
+    return out_file.read_text()
+
+
+def ngspice_evaluate(p: OpAmpParams, model: NgspiceModel = GENERIC_NGSPICE, *,
+                     runner=None, work_dir: str | None = None,
+                     timeout: float = 120.0) -> OpAmpSpecs:
+    """Run a real ngspice AC sweep and return specs (same contract as evaluate_opamp).
+
+    `runner(netlist_path) -> wrdata_text` lets tests inject a fake ngspice.
+    Raises NgspiceUnavailable if ngspice is missing, times out after *timeout*
+    seconds, or the run produces no / incomplete / non-finite data.
+
+    Without *work_dir* the run uses a private temp dir that is always removed
+    (also on failure); a caller-supplied *work_dir* is kept for inspection.
+    """
+    if work_dir is not None:
+        Path(work_dir).mkdir(parents=True, exist_ok=True)
+        wrdata = _run_ngspice(p, model, Path(work_dir), runner, timeout)
     else:
-        if not ngspice_available():
-            raise NgspiceUnavailable(
-                "ngspice not on PATH. Install: `brew install ngspice` (macOS) / "
-                "`apt install ngspice` (Linux), or use the IIC-OSIC-TOOLS docker."
-            )
-        proc = subprocess.run(["ngspice", "-b", str(cir)],
-                              capture_output=True, text=True, timeout=120)
-        if not out_file.exists():
-            raise NgspiceUnavailable(f"ngspice produced no output: {proc.stderr[-400:]}")
-        wrdata = out_file.read_text()
+        with tempfile.TemporaryDirectory(prefix="ota_ngspice_") as tmp:
+            wrdata = _run_ngspice(p, model, Path(tmp), runner, timeout)
 
     freq, vout = _parse_wrdata(wrdata)
     if not freq:
