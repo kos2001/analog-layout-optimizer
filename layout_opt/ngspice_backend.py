@@ -21,7 +21,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .opamp import VDD, OpAmpParams, OpAmpSpecs, _vov, KP_N, KP_P
+from .opamp import (
+    VDD, VTH_N, VTH_P, OpAmpParams, OpAmpSpecs, _vov, KP_N, KP_P, cm_window, headroom,
+)
 from .spectre_backend import extract_ac_metrics   # pure (freq, complex) -> metrics
 
 
@@ -44,6 +46,8 @@ class NgspiceModel:
     temp: float = 27.0       # circuit temperature (deg C) for the sim
     w_max: float = 0.0       # max total width per instance (um); 0 = unlimited
     w_finger: float = 5.0    # target finger width (um) when splitting into nf
+    vth_n: float = VTH_N     # device thresholds (V) used to place the input
+    vth_p: float = VTH_P     # common mode inside the all-saturated window
 
 
 # Generic square-law (level=1) models — mirror the analytical opamp constants
@@ -83,6 +87,8 @@ def sky130_model(corner: str = "tt", pdk_root: str | None = None,
         nmos="sky130_fd_pr__nfet_01v8", pmos="sky130_fd_pr__pfet_01v8",
         l_um=l_um, vdd=1.8, cl_ff=cl_ff, subckt=True, w_min=0.42,
         w_max=100.0,   # binned models reject total w > 100 um per instance
+        # tt-corner |Vth| at L = 0.5 um (BSIM op point, |Vds| = 0.9 V)
+        vth_n=0.63, vth_p=0.98,
     )
 
 
@@ -122,8 +128,11 @@ Lfb vout vinn 1e9
 Cfb vinn vcm 1e9
 .nodeset v(vout)={vcm} v(vinn)={vcm} v(outp)={vcm}
 {devices}
-itail tail 0 dc {itail}
-i6 vdd vout dc {i6}
+* Bias: ideal references feed 1:1 diode mirrors (mb5 / mb7); the tail M5 and
+* the output load M7 are real transistors, so their headroom and output
+* resistance are simulated rather than assumed ideal.
+iref5 vdd nb5 dc {itail}
+iref7 pb7 0 dc {i6}
 cc outp vout {cc}p
 cl vout 0 {cl}f
 .control
@@ -134,6 +143,14 @@ wrdata {out} vr(vout) vi(vout)
 """
 
 
+def bias_cm(p: OpAmpParams, model: NgspiceModel) -> float:
+    """Input / output common mode for the testbench: the centre of the window
+    where every device is saturated for this model's thresholds (VDD/2 is
+    not safe — with low-Vth devices it drives M2 into triode)."""
+    lo, hi = cm_window(p, model.vth_n, model.vth_p, model.vdd)
+    return round(min(max((lo + hi) / 2.0, 0.0), model.vdd), 4)
+
+
 def render_netlist(p: OpAmpParams, model: NgspiceModel, out_path: str) -> str:
     l = model.l_um
     devices = "\n".join([
@@ -141,11 +158,15 @@ def render_netlist(p: OpAmpParams, model: NgspiceModel, out_path: str) -> str:
         _dev(model, "2", "outp", "vinn", "tail", "0", "n", p.wl1 * l, l),
         _dev(model, "3", "outm", "outm", "vdd", "vdd", "p", p.wl3 * l, l),
         _dev(model, "4", "outp", "outm", "vdd", "vdd", "p", p.wl3 * l, l),
+        _dev(model, "5", "tail", "nb5", "0", "0", "n", p.wl5 * l, l),
+        _dev(model, "b5", "nb5", "nb5", "0", "0", "n", p.wl5 * l, l),
         _dev(model, "6", "vout", "outp", "0", "0", "n", p.wl6 * l, l),
+        _dev(model, "7", "vout", "pb7", "vdd", "vdd", "p", p.wl7 * l, l),
+        _dev(model, "b7", "pb7", "pb7", "vdd", "vdd", "p", p.wl7 * l, l),
     ])
     return _NETLIST.format(
         header=model.header, devices=devices, temp=model.temp,
-        vdd=model.vdd, vcm=model.vdd / 2.0,
+        vdd=model.vdd, vcm=bias_cm(p, model),
         itail=p.itail, i6=p.i6, cc=p.cc * 1e12, cl=model.cl_ff, out=out_path,
     )
 
@@ -258,6 +279,7 @@ def ngspice_evaluate(p: OpAmpParams, model: NgspiceModel = GENERIC_NGSPICE, *,
         vov1=_vov(KP_N, p.wl1, i1), vov3=_vov(KP_P, p.wl3, i1),
         vov5=_vov(KP_N, p.wl5, p.itail), vov6=_vov(KP_N, p.wl6, p.i6),
         vov7=_vov(KP_P, p.wl7, p.i6),
+        headroom=headroom(p, model.vth_n, model.vth_p, model.vdd),
     )
 
 

@@ -52,7 +52,8 @@ def test_full_flow_silicon_stage_warns_and_does_not_pass(monkeypatch):
     monkeypatch.setattr(flow_e2e, "sky130_available", lambda *a, **k: True)
     monkeypatch.setattr(flow_e2e, "sky130_model", lambda *a, **k: nb.GENERIC_NGSPICE)
     monkeypatch.setattr(flow_e2e, "ngspice_evaluate", _unmeasured_specs)
-    r = flow_e2e.run_end_to_end("sa", 1, sky130=True)
+    monkeypatch.setattr(nb, "ngspice_evaluate", _unmeasured_specs)    # calibrated sizing
+    r = flow_e2e.run_end_to_end("sa", 1, sky130=True, maxiter=40)
     st = next(s for s in r["stages"] if s["name"].startswith("Silicon"))
     assert st["status"] == "warn" and "not measured" in st["detail"]
     assert r["silicon"]["gbw_mhz"] is None and r["silicon"]["pm_deg"] is None
@@ -66,9 +67,10 @@ def _silicon_flow(monkeypatch, **overrides):
     good.update(overrides)
     monkeypatch.setattr(flow_e2e, "sky130_available", lambda *a, **k: True)
     monkeypatch.setattr(flow_e2e, "sky130_model", lambda *a, **k: nb.GENERIC_NGSPICE)
-    monkeypatch.setattr(flow_e2e, "ngspice_evaluate",
-                        lambda p, *_a, **_k: replace(evaluate_opamp(p), **good))
-    r = flow_e2e.run_end_to_end("sa", 1, sky130=True)
+    fake = lambda p, *_a, **_k: replace(evaluate_opamp(p), **good)          # noqa: E731
+    monkeypatch.setattr(flow_e2e, "ngspice_evaluate", fake)
+    monkeypatch.setattr(nb, "ngspice_evaluate", fake)                     # calibrated sizing
+    r = flow_e2e.run_end_to_end("sa", 1, sky130=True, maxiter=40)
     return r, next(s for s in r["stages"] if s["name"].startswith("Silicon"))
 
 
@@ -91,3 +93,37 @@ def test_silicon_stage_lists_every_spec_miss(monkeypatch):
     assert st["status"] == "warn"
     assert {m["metric"] for m in r["silicon"]["misses"]} == {"gain_db", "gbw_mhz"}
     assert "unstable" not in st["detail"]
+
+
+# --- calibration never trades a feasible design for an infeasible target -----
+def test_calibration_keeps_last_feasible_design_when_a_gap_cannot_close(monkeypatch):
+    # Silicon gain 7 dB below the analytic model, whatever the sizing: raising
+    # the analytic gain target can't close it and would end infeasible.
+    from layout_opt.opamp_opt import GAIN_MIN
+    monkeypatch.setattr(nb, "ngspice_evaluate",
+                        lambda p, *_a, **_k: replace(evaluate_opamp(p),
+                                                     gain_db=evaluate_opamp(p).gain_db - 7.0))
+    out = de_log_ngspice(seed=0, maxiter=30, rounds=3)
+    cal = out["calibration"]
+    assert out["design"].feasible
+    assert cal["meetsSpec"] is False and cal["limitedBy"] == ["gain_db"]
+    assert out["sim"].gain_db < GAIN_MIN
+
+
+def test_calibration_closes_a_small_gap(monkeypatch):
+    # A 0.4 dB analytic-vs-silicon gain gap is closable by tightening the target.
+    monkeypatch.setattr(nb, "ngspice_evaluate",
+                        lambda p, *_a, **_k: replace(evaluate_opamp(p),
+                                                     gain_db=evaluate_opamp(p).gain_db - 0.4))
+    out = de_log_ngspice(seed=0, maxiter=40, rounds=3)
+    assert out["calibration"]["meetsSpec"] is True and out["design"].feasible
+    assert out["calibration"]["limitedBy"] == []
+
+
+def test_sky130_flow_sizes_against_silicon_and_reports_calibration(monkeypatch):
+    r, st = _silicon_flow(monkeypatch)
+    sizing = next(x for x in r["stages"] if x["name"].startswith("Sizing"))
+    assert "SKY130-calibrated" in sizing["detail"]
+    assert r["calibration"]["meetsSpec"] is True and r["calibration"]["rounds"] >= 1
+    plain = flow_e2e.run_end_to_end("sa", 1, sky130=False, maxiter=40)
+    assert plain["calibration"] is None

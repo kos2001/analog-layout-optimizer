@@ -19,7 +19,7 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 
 from .opamp import evaluate_opamp
-from .opamp_opt import GAIN_MIN, GBW_MIN, PM_MIN, de_log_refine
+from .opamp_opt import GAIN_MIN, GBW_MIN, PM_MIN, de_log_ngspice, de_log_refine
 from .placement import run_flow
 from .schematic import two_stage_ota
 from .runlog import Profiler, merge_stats, stage
@@ -198,13 +198,24 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
 
     # 1. Sizing — minimize power s.t. gain/GBW/PM/slew specs (DE in log space),
     # with a parasitic guard-band so post-layout PM/GBW still meet nominal.
+    # With SKY130 verify on, the analytic targets are calibrated against real
+    # BSIM simulations of the winner, so the silicon — not just the model —
+    # is what gets sized.
+    cal = None
     with stage("sizing"):
-        d = de_log_refine(seed=seed, maxiter=maxiter, guardband=True)
+        if sky130 and sky130_available():
+            try:
+                cal = de_log_ngspice(seed=seed, maxiter=maxiter, model=sky130_model(),
+                                     rounds=3, guardband=True)
+            except NgspiceUnavailable as e:
+                _log.warning("SKY130-calibrated sizing unavailable, using analytic: %s", e)
+        d = cal["design"] if cal else de_log_refine(seed=seed, maxiter=maxiter, guardband=True)
         s = evaluate_opamp(d.params)
     stages.append(_stage(
         "Sizing (DE)", "pass" if d.feasible else "fail",
         f"gain {s.gain_db:.1f} dB · GBW {s.gbw_hz/1e6:.1f} MHz · PM {s.pm_deg:.0f}° · "
-        f"{s.power*1e3:.3f} mW" + ("" if d.feasible else " · specs not met")))
+        f"{s.power*1e3:.3f} mW" + ("" if d.feasible else " · specs not met")
+        + (f" · SKY130-calibrated ({cal['calibration']['rounds']} sim rounds)" if cal else "")))
 
     # 2-6. schematic → placement → routing → sign-off → post-layout (sized).
     # analog_aware: matched-pair symmetry + short high-impedance (n1/n2) nets,
@@ -241,7 +252,8 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
         if sky130_available():
             try:
                 with stage("silicon"):
-                    ss = ngspice_evaluate(d.params, sky130_model())
+                    # Calibrated sizing already simulated its final design.
+                    ss = cal["sim"] if cal else ngspice_evaluate(d.params, sky130_model())
                 silicon, status, detail = _silicon_check(ss)
                 stages.append(_stage("Silicon verify (SKY130)", status, detail))
             except NgspiceUnavailable as e:
@@ -266,4 +278,5 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
             "itail_uA": round(d.params.itail * 1e6, 1), "cc_pF": round(d.params.cc * 1e12, 2),
         },
         "silicon": silicon,
+        "calibration": cal["calibration"] if cal else None,
     }
