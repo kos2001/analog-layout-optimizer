@@ -1,4 +1,4 @@
-"""Two-stage Miller-compensated OTA - analytical (square-law) model.
+r"""Two-stage Miller-compensated OTA - analytical (square-law) model.
 
 A harder, higher-dimensional analog sizing problem than the diff pair: a
 5-transistor first stage (M1/M2 input pair, M3/M4 mirror load, M5 tail) plus a
@@ -97,6 +97,19 @@ class OpAmpSpecs:
     vov5: float
     vov6: float
     vov7: float
+
+    def unmeasured(self) -> list[str]:
+        """Simulated headline metrics that came back NaN (not measured)."""
+        return [k for k in ("gain_db", "gbw_hz", "pm_deg")
+                if not math.isfinite(getattr(self, k))]
+
+    def summary(self, pm_digits: int = 2) -> dict:
+        """JSON-safe headline metrics; an unmeasured metric is None, never NaN
+        (which the API can't serialize) and never a made-up number."""
+        def r(v: float, nd: int):
+            return round(float(v), nd) if math.isfinite(v) else None
+        return {"gain_db": r(self.gain_db, 2), "gbw_mhz": r(self.gbw_hz / 1e6, 2),
+                "pm_deg": r(self.pm_deg, pm_digits), "power_mw": r(self.power * 1e3, 4)}
 
 
 def _gm(kp, wl, i):

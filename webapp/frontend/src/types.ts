@@ -370,13 +370,16 @@ export interface StudyRow {
 }
 export interface OpAmpStudy { results: StudyRow[]; note: string; }
 export interface Preflight { bridge_env: boolean; spectre: boolean; ready: boolean; guidance: string[]; }
-export interface SpectreSpecs { gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number; }
+// A simulated metric is null when it was not measured (no 0 dB crossing in the sweep).
+export interface SpectreSpecs { gain_db: number | null; gbw_mhz: number | null; pm_deg: number | null; power_mw: number | null; }
 export interface SpectreEval {
   pdk: string;
   analytic: SpectreSpecs;
   spectre?: SpectreSpecs;
   status: string;
   error?: string;
+  unmeasured?: string[];
+  note?: string;
   preflight?: Preflight;
 }
 
@@ -437,20 +440,21 @@ export interface ProcessEffects {
 }
 
 // --- ngspice (open-source) eval ---
-export interface SimSpecs { gain_db: number; gbw_mhz: number; pm_deg: number; power_mw: number; }
+export interface SimSpecs { gain_db: number | null; gbw_mhz: number | null; pm_deg: number | null; power_mw: number | null; }
 export interface NgspiceEval {
   backend: string; model: string; available: boolean;
   modelKind?: string; sky130Available?: boolean;
   analytic: SimSpecs; sim?: SimSpecs; status: string; error?: string;
+  unmeasured?: string[]; note?: string;
 }
 
 export interface PVTCorner {
   process: string; temp_c: number; vdd: number;
-  gain_db: number; gbw_mhz: number; pm_deg: number;
+  gain_db: number | null; gbw_mhz: number | null; pm_deg: number | null;
 }
 export interface PVTData {
   available: boolean; error?: string;
   nCorners?: number; corners?: PVTCorner[];
-  worst?: { gain_db: number; gbw_mhz: number; pm_deg: number };
+  worst?: { gain_db: number | null; gbw_mhz: number | null; pm_deg: number | null };
   nominal?: PVTCorner; stable?: boolean;
 }

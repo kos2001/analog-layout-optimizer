@@ -181,8 +181,11 @@ def _phase_margin(freq, vout, gbw) -> float:
     """Phase margin = 180 - cumulative phase lag from DC to the unity-gain freq.
 
     Uses unwrapped phase so the inverting (~180 deg) DC reference doesn't alias.
+    An unmeasured (NaN) GBW gives an unmeasured (NaN) phase margin.
     """
     import numpy as np
+    if not math.isfinite(gbw):
+        return math.nan
     f = np.asarray(freq, dtype=float)
     ph = np.degrees(np.unwrap(np.angle(np.asarray(vout, dtype=complex))))
     order = np.argsort(f)
