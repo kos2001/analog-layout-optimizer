@@ -127,3 +127,19 @@ def test_sky130_flow_sizes_against_silicon_and_reports_calibration(monkeypatch):
     assert r["calibration"]["meetsSpec"] is True and r["calibration"]["rounds"] >= 1
     plain = flow_e2e.run_end_to_end("sa", 1, sky130=False, maxiter=40)
     assert plain["calibration"] is None
+
+
+def test_calibration_backtracks_an_overshooting_pm_target(monkeypatch):
+    # Silicon PM 20 deg below the model: the full residual step asks the
+    # analytic sizing for ~85 deg (unreachable), so calibration must backtrack
+    # to a reachable target instead of stopping at round one.
+    from layout_opt.opamp_opt import PM_MIN
+    fake = lambda p, *_a, **_k: replace(evaluate_opamp(p),                # noqa: E731
+                                        pm_deg=evaluate_opamp(p).pm_deg - 20.0)
+    monkeypatch.setattr(nb, "ngspice_evaluate", fake)
+    first = de_log_ngspice(seed=0, maxiter=40, rounds=1)["sim"].pm_deg
+    out = de_log_ngspice(seed=0, maxiter=40, rounds=3)
+    assert out["design"].feasible
+    assert out["calibration"]["rounds"] >= 2
+    assert out["sim"].pm_deg > first + 2.0
+    assert out["calibration"]["pm_min_deg"] > PM_MIN
