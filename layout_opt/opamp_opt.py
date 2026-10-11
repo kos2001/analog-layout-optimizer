@@ -59,17 +59,26 @@ class Design:
         return evaluate_opamp(self.params)
 
 
+def _shortfall(target: float, value: float) -> float:
+    """Normalized shortfall below a min spec; unmeasured counts as a full miss."""
+    if not math.isfinite(value):
+        return 1.0
+    return max(0.0, (target - value) / target)
+
+
 def _violation_from_specs(s, p: OpAmpParams, *, gbw_min: float = GBW_MIN,
                           pm_min: float = PM_MIN) -> float:
     """Total normalized spec shortfall for an already-evaluated spec set.
 
     Shared by the analytical and the Spectre-backed objectives so both enforce
     exactly the same constraints. `gbw_min`/`pm_min` allow guard-banded targets.
+    A simulated metric that was not measured (NaN, e.g. no unity-gain crossing
+    in the sweep) counts as a full miss of its spec, never as met.
     """
     v = 0.0
-    v += max(0.0, (GAIN_MIN - s.gain_db) / GAIN_MIN)
-    v += max(0.0, (gbw_min - s.gbw_hz) / gbw_min)
-    v += max(0.0, (pm_min - s.pm_deg) / pm_min)
+    v += _shortfall(GAIN_MIN, s.gain_db)
+    v += _shortfall(gbw_min, s.gbw_hz)
+    v += _shortfall(pm_min, s.pm_deg)
     v += max(0.0, (SLEW_MIN - s.slew) / SLEW_MIN)
     for vov in (s.vov1, s.vov3, s.vov5, s.vov6, s.vov7):
         v += max(0.0, (VOV_MIN - vov) / VOV_MIN)
@@ -197,12 +206,18 @@ def de_log_ngspice(seed=0, maxiter=120, model=None, rounds: int = 2,
     gbw_min, pm_min = GBW_MIN, PM_MIN
     d = sim = None
     done = 0
+    measured = True
     for _ in range(max(rounds, 1)):
         d = de_log_refine(seed=seed, maxiter=maxiter, guardband=guardband,
                           gbw_min=gbw_min, pm_min=pm_min)
         s_ana = evaluate_opamp(d.params)
         sim = ngspice_evaluate(d.params, model)
         done += 1
+        if not (math.isfinite(sim.gbw_hz) and math.isfinite(sim.pm_deg)):
+            # No unity-gain crossing in the sweep: there is no residual to
+            # calibrate against, so stop and report it rather than guess.
+            measured = False
+            break
         if sim.gbw_hz >= GBW_MIN and sim.pm_deg >= PM_MIN:
             break
         # Tighten analytic targets by the observed residual (only ever tighten).
@@ -214,7 +229,8 @@ def de_log_ngspice(seed=0, maxiter=120, model=None, rounds: int = 2,
         "design": d,
         "sim": sim,
         "calibration": {"rounds": done, "gbw_min_hz": gbw_min,
-                        "pm_min_deg": pm_min, "model": model.name},
+                        "pm_min_deg": pm_min, "model": model.name,
+                        "measured": measured},
     }
 
 

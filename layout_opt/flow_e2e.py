@@ -196,11 +196,20 @@ def run_end_to_end(place: str = "sa", seed: int = 0, sky130: bool = False,
             try:
                 with stage("silicon"):
                     ss = ngspice_evaluate(d.params, sky130_model())
-                silicon = {"model": "sky130-tt", "gain_db": round(ss.gain_db, 2),
-                           "gbw_mhz": round(ss.gbw_hz / 1e6, 2), "pm_deg": round(ss.pm_deg, 1)}
-                stages.append(_stage("Silicon verify (SKY130)", "pass",
-                                     f"{silicon['gain_db']} dB · {silicon['gbw_mhz']} MHz · "
-                                     f"{silicon['pm_deg']}° (real BSIM)"))
+                m = ss.summary(pm_digits=1)
+                silicon = {"model": "sky130-tt", "gain_db": m["gain_db"],
+                           "gbw_mhz": m["gbw_mhz"], "pm_deg": m["pm_deg"]}
+                if ss.unmeasured():
+                    # No 0 dB crossing in the sweep: GBW/PM unknown, so this
+                    # stage can't claim a pass.
+                    silicon["unmeasured"] = ss.unmeasured()
+                    stages.append(_stage("Silicon verify (SKY130)", "warn",
+                                         f"{m['gain_db']} dB · GBW/PM not measured "
+                                         "(no 0 dB crossing in the AC sweep)"))
+                else:
+                    stages.append(_stage("Silicon verify (SKY130)", "pass",
+                                         f"{silicon['gain_db']} dB · {silicon['gbw_mhz']} MHz · "
+                                         f"{silicon['pm_deg']}° (real BSIM)"))
             except NgspiceUnavailable as e:
                 stages.append(_stage("Silicon verify (SKY130)", "warn", str(e)))
         else:

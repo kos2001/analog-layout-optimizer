@@ -106,3 +106,33 @@ def test_preflight_reports_not_ready_without_backend():
 def test_spectre_unavailable_when_no_backend():
     with pytest.raises(SpectreUnavailable):
         spectre_evaluate(params(), TEMPLATE_PDK, work_dir="/tmp/ota_sx_test")
+
+
+# --- no unity-gain crossing: GBW / PM are unmeasured, never invented --------
+def test_no_crossing_within_sweep_reports_unmeasured_gbw_and_pm():
+    # Sweep stops (1 MHz) long before the gain reaches 0 dB (~100 MHz). The old
+    # code reported f[-1] = 1 MHz as the GBW and the phase there as the PM.
+    A0, fp = 1000.0, 1e5
+    f = np.logspace(1, 6, 500)
+    gain_db, gbw, pm = extract_ac_metrics(f, A0 / (1 + 1j * f / fp))
+    assert gain_db == pytest.approx(60.0, abs=0.1)
+    assert math.isnan(gbw) and math.isnan(pm)
+
+
+def test_gain_below_unity_from_dc_reports_unmeasured_gbw_and_pm():
+    f = np.logspace(1, 9, 500)
+    gain_db, gbw, pm = extract_ac_metrics(f, 0.5 / (1 + 1j * f / 1e6))
+    assert gain_db == pytest.approx(20 * math.log10(0.5), abs=0.1)
+    assert math.isnan(gbw) and math.isnan(pm)
+
+
+def test_unmeasured_gbw_or_pm_counts_as_a_violation():
+    from dataclasses import replace
+    from layout_opt.opamp import evaluate_opamp
+    from layout_opt.opamp_opt import _violation_from_specs, de_log_refine
+
+    d = de_log_refine(seed=0)
+    assert _violation_from_specs(d.specs, d.params) == 0.0          # feasible as sized
+    for field in ("gbw_hz", "pm_deg", "gain_db"):
+        s = replace(evaluate_opamp(d.params), **{field: float("nan")})
+        assert _violation_from_specs(s, d.params) > 0.0, field

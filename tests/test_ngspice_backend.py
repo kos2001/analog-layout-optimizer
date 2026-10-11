@@ -130,3 +130,20 @@ def test_temp_dir_removed_after_success(monkeypatch, tmp_path):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     ngspice_evaluate(params(), GENERIC_NGSPICE, runner=lambda _cir: _fake_wrdata())
     assert list(tmp_path.iterdir()) == []
+
+
+def test_no_crossing_in_sweep_is_unmeasured_and_infeasible():
+    # Sweep ends at 1 MHz; a 60 dB / 100 kHz pole only reaches 0 dB at 100 MHz.
+    from layout_opt.ngspice_backend import make_ngspice_objective
+
+    def short_sweep(_cir):
+        f = np.logspace(0, 6, 300)
+        h = 1000.0 / (1 + 1j * f / 1e5)
+        return "\n".join(f"{fi:.6e} {hi.real:.6e} {fi:.6e} {hi.imag:.6e}"
+                         for fi, hi in zip(f, h))
+
+    s = ngspice_evaluate(params(), GENERIC_NGSPICE, runner=short_sweep)
+    assert s.gain_db == pytest.approx(60.0, abs=0.3)
+    assert math.isnan(s.gbw_hz) and math.isnan(s.pm_deg)
+    obj = make_ngspice_objective(GENERIC_NGSPICE, runner=short_sweep)
+    assert obj(params().to_vector()) >= 10.0                  # infeasible penalty, not power
