@@ -1,6 +1,8 @@
 <img src="icon.svg" alt="Analog Layout Optimizer icon" width="96" align="left" />
 
-# Analog Layout Optimization PoC — *without* Virtuoso
+# analog-layout-optimizer
+
+**Analog Layout Optimization PoC — *without* Virtuoso**
 
 <br clear="left"/>
 
@@ -21,6 +23,68 @@ gracefully when the PDK/server is absent).
 
 See **[End-to-end flow & web app](#end-to-end-flow--web-app)** for the one-click
 pipeline and the interactive UI.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Screens](#screens)
+- [Recommended architecture](#recommended-architecture)
+- [End-to-end flow & web app](#end-to-end-flow--web-app)
+- [The cell](#the-cell)
+- [What is verified offline (and how)](#what-is-verified-offline-and-how)
+- [What is deferred to optional future Virtuoso access](#what-is-deferred-to-optional-future-virtuoso-access)
+- [Run it](#run-it)
+- [Can a surrogate replace Virtuoso? (`surrogate_*`, `truth.py`)](#can-a-surrogate-replace-virtuoso-surrogate_-truthpy)
+- [Routing optimization (`routing.py`)](#routing-optimization-routingpy)
+- [Joint device + routing co-optimization (`joint.py`)](#joint-device--routing-co-optimization-jointpy)
+- [A harder circuit + autonomous algorithm study (`opamp*.py`)](#a-harder-circuit--autonomous-algorithm-study-opamppy)
+- [Connecting a real PDK / Spectre (`spectre_backend.py`, `pdk.py`)](#connecting-a-real-pdk--spectre-spectre_backendpy-pdkpy)
+- [Going live later](#going-live-later)
+
+## Quick start
+
+Runs fully offline — no Virtuoso, PDK or license needed.
+
+```bash
+git clone https://github.com/kos2001/analog-layout-optimizer && cd analog-layout-optimizer
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt -r webapp/backend/requirements.txt
+
+# backend (FastAPI)                       → http://127.0.0.1:8011/api/health
+python -m uvicorn webapp.backend.main:app --port 8011
+# frontend (Vite dev server, proxies /api → :8011), in a second terminal
+cd webapp/frontend && npm install && npm run dev      # http://localhost:5173
+```
+
+The test suite (`python -m pytest -q`, 150+ offline tests) additionally needs
+`virtuoso-bridge-lite` installed — see [Run it](#run-it).
+
+Open the UI, pick **Full flow** in the sidebar and press **Run full flow**: the
+whole sizing → placement → routing → sign-off → post-layout pipeline runs in
+well under a second and shows a stage-by-stage verdict. See
+[Run the web app](#run-the-web-app) and [Batch mode](#batch-mode-python--m-layout_opt-flow)
+for options.
+
+## Screens
+
+<table>
+  <tr>
+    <td><img src="docs/img/fullflow.png" alt="Full flow view: one-click sizing to post-layout pipeline with PASS verdict and routed OTA" width="100%"></td>
+    <td><img src="docs/img/flow.png" alt="Schematic to P&amp;R view: sign-off panel with connectivity, LVS and DRC results plus post-layout re-sim" width="100%"></td>
+  </tr>
+  <tr>
+    <td><b>Full flow</b> — one click runs sizing (DE) → schematic → placement (SA) → negotiated routing → DRC+LVS sign-off → parasitic re-sim over a seed sweep, with the routed two-stage OTA.</td>
+    <td><b>Schematic → P&amp;R</b> — sign-off result (connectivity, LVS, DRC) and the post-layout table showing how extracted parasitics eat phase margin.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/img/layoutview.png" alt="Layout view: transistor-level SKY130 GDS rendered layer by layer in the browser" width="100%"></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><b>Layout view</b> — transistor-level SKY130 geometry (nwell, diff, poly, metal) of the OTA rendered in the browser, layer by layer.</td>
+    <td></td>
+  </tr>
+</table>
 
 ## Recommended architecture
 
