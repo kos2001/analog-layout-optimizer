@@ -344,6 +344,11 @@ export interface FullFlowData extends FlowData {
   verdict: string;
   sizing: FlowSizing;
   silicon: FlowSilicon | null;
+  // SKY130 runs: sizing calibrated against real BSIM simulation of the winner.
+  calibration: {
+    rounds: number; model: string; measured: boolean; meetsSpec: boolean;
+    limitedBy: string[]; gain_min_db: number; gbw_min_hz: number; pm_min_deg: number;
+  } | null;
   sweep?: { seeds: number[]; bestSeed: number; verdicts: string[] };
 }
 
