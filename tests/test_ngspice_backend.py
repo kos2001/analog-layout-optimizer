@@ -93,3 +93,40 @@ def test_live_sky130_real_silicon_specs():
     assert s.gain_db > 30.0            # real BSIM amplifier
     assert s.gbw_hz > 1e6
     assert -10.0 < s.pm_deg < 120.0
+
+
+# --- robustness: bad data, timeout, temp-dir hygiene ---
+def test_parse_wrdata_rejects_non_finite_and_truncated_rows():
+    with pytest.raises(NgspiceUnavailable, match="non-finite"):
+        _parse_wrdata("1.0 2.0 1.0 -3.0\n10.0 nan 10.0 0.1\n")
+    with pytest.raises(NgspiceUnavailable, match="incomplete"):
+        _parse_wrdata("1.0 2.0 1.0 -3.0\n10.0 0.5\n")
+    # a vector-name header before the data is still fine
+    freq, _ = _parse_wrdata("frequency v(vout) frequency v(vout)\n1.0 2.0 1.0 -3.0\n")
+    assert freq == [1.0]
+
+
+def test_timeout_maps_to_unavailable_and_cleans_temp(monkeypatch, tmp_path):
+    import subprocess
+    import tempfile
+    import layout_opt.ngspice_backend as nb
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(nb, "ngspice_available", lambda: True)
+    seen = {}
+
+    def hang(cmd, **kw):
+        seen["cmd"] = cmd
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    monkeypatch.setattr(nb.subprocess, "run", hang)
+    with pytest.raises(NgspiceUnavailable, match="timed out"):
+        ngspice_evaluate(params(), GENERIC_NGSPICE, timeout=0.5)
+    assert seen["cmd"][:3] == ["ngspice", "-n", "-b"]    # no user .spiceinit
+    assert list(tmp_path.iterdir()) == []                 # temp dir removed
+
+
+def test_temp_dir_removed_after_success(monkeypatch, tmp_path):
+    import tempfile
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    ngspice_evaluate(params(), GENERIC_NGSPICE, runner=lambda _cir: _fake_wrdata())
+    assert list(tmp_path.iterdir()) == []
