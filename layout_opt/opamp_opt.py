@@ -196,6 +196,10 @@ def de_log_refine(seed=0, maxiter=120, guardband: bool = False, *,
     return d
 
 
+# Halvings of an infeasible GBW / PM target step before calibration stops.
+BACKTRACK_STEPS = 2
+
+
 def sim_misses(s) -> list[str]:
     """Headline specs a simulated design misses (NaN counts as a miss)."""
     return [k for k, target in (("gain_db", GAIN_MIN), ("gbw_hz", GBW_MIN),
@@ -241,6 +245,16 @@ def de_log_ngspice(seed=0, maxiter=120, model=None, rounds: int = 2,
                 break                          # nothing else left to tighten
             cand = de_log_refine(seed=seed, maxiter=maxiter, guardband=guardband,
                                  gbw_min=gbw_min, pm_min=pm_min, gain_min=gain_min)
+        for _halve in range(BACKTRACK_STEPS):
+            if d is None or cand.feasible:
+                break
+            # The full residual step overshoots what the analytic model can
+            # reach (its PM saturates below 90 deg): backtrack the GBW / PM
+            # targets halfway towards the last feasible ones and retry.
+            gbw_min = (used[1] + gbw_min) / 2.0
+            pm_min = (used[2] + pm_min) / 2.0
+            cand = de_log_refine(seed=seed, maxiter=maxiter, guardband=guardband,
+                                 gbw_min=gbw_min, pm_min=pm_min, gain_min=gain_min)
         if d is not None and not cand.feasible:
             # The tightened targets are beyond what the analytic model can
             # reach (e.g. a silicon gain gap no sizing closes): keep the last
@@ -259,14 +273,18 @@ def de_log_ngspice(seed=0, maxiter=120, model=None, rounds: int = 2,
             break
         if gain_locked and sim.gbw_hz >= GBW_MIN and sim.pm_deg >= PM_MIN:
             break                              # only the unclosable gain gap remains
-        # Tighten analytic targets by the observed residual (only ever tighten).
+        # Tighten analytic targets by the observed residual (only ever tighten),
+        # and only for specs the simulated design misses: over-tightening a met
+        # spec just steals room from the others.
         gain_shift = sim.gain_db - s_ana.gain_db
         k_gbw = max(sim.gbw_hz / max(s_ana.gbw_hz, 1.0), 1e-3)
         pm_shift = sim.pm_deg - s_ana.pm_deg
-        if not gain_locked:
+        if not gain_locked and sim.gain_db < GAIN_MIN:
             gain_min = max(gain_min, GAIN_MIN - min(gain_shift, 0.0))
-        gbw_min = max(gbw_min, GBW_MIN / min(k_gbw, 1.0))
-        pm_min = max(pm_min, PM_MIN - min(pm_shift, 0.0))
+        if sim.gbw_hz < GBW_MIN:
+            gbw_min = max(gbw_min, GBW_MIN / min(k_gbw, 1.0))
+        if sim.pm_deg < PM_MIN:
+            pm_min = max(pm_min, PM_MIN - min(pm_shift, 0.0))
     meets = measured and sim_meets_spec(sim)
     return {
         "design": d,

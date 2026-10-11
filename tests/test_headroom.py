@@ -64,3 +64,42 @@ def test_level1_simulation_now_agrees_with_the_analytic_model():
     assert abs(s.gain_db - a.gain_db) < 3.0
     assert s.gbw_hz == pytest.approx(a.gbw_hz, rel=0.25)
     assert math.isfinite(s.pm_deg)
+
+
+# --- per-group channel length and length-aware biasing (SKY130) -------------
+def test_gain_devices_get_their_own_length_with_wl_preserved():
+    import re
+    p = de_log_refine(seed=0).params
+    m = replace(GENERIC_NGSPICE, l_um=0.2, l_gain_um=0.6)
+    nl = render_netlist(p, m, "/tmp/x.txt")
+
+    def l_of(dev):
+        return float(re.search(rf"^m{dev} .* l=([\d.]+)u", nl, re.M).group(1))
+
+    for dev in ("1", "2", "3", "4", "7", "b7"):
+        assert l_of(dev) == pytest.approx(0.6), dev          # output resistance sets gain
+    for dev in ("5", "b5", "6"):
+        assert l_of(dev) == pytest.approx(0.2), dev          # M6 on the Miller-split node
+    w1 = float(re.search(r"^m1 .* w=([\d.]+)u", nl, re.M).group(1))
+    assert w1 == pytest.approx(round(p.wl1 * 0.6, 4))        # W/L unchanged
+
+
+def test_sky130_vth_follows_channel_length():
+    from layout_opt.ngspice_backend import SKY130_TT_VTH, sky130_vth
+    assert sky130_vth(0.5) == SKY130_TT_VTH[0.5]
+    n, pp = sky130_vth(1.25)                                  # between 1.0 and 1.5
+    assert SKY130_TT_VTH[1.5][0] < n < SKY130_TT_VTH[1.0][0]
+    assert SKY130_TT_VTH[1.0][1] < pp < SKY130_TT_VTH[1.5][1]
+    assert sky130_vth(0.1) == SKY130_TT_VTH[0.5]              # clamped at the ends
+    assert sky130_vth(9.0) == SKY130_TT_VTH[3.0]
+
+
+def test_operating_point_is_seeded_from_the_analytic_dc_model():
+    p = de_log_refine(seed=0).params
+    nl = render_netlist(p, GENERIC_NGSPICE, "/tmp/x.txt")
+    nodeset = next(l for l in nl.splitlines() if l.startswith(".nodeset"))
+    for node in ("outp", "outm", "tail", "nb5", "pb7"):
+        assert f"v({node})=" in nodeset
+    seeds = dict(kv.split("=") for kv in nodeset.split()[1:])
+    vcm = float(seeds["v(vout)"])
+    assert float(seeds["v(outp)"]) < vcm                     # not all seeded at vcm
