@@ -836,6 +836,10 @@ async def get_opamp_spectre_eval(seed: int = 0) -> dict:
     return await _offload("opamp/spectre-eval", seed=seed)
 
 
+UNMEASURED_NOTE = ("The AC sweep never crossed 0 dB, so GBW and phase margin were not "
+                   "measured (reported as null). Widen the sweep or check the bias point.")
+
+
 @_kind("opamp/spectre-eval", env=True)
 def _compute_opamp_spectre_eval(seed: int = 0) -> dict:
     cand = de_log_refine(seed=seed).params
@@ -847,9 +851,11 @@ def _compute_opamp_spectre_eval(seed: int = 0) -> dict:
     }
     try:
         s = spectre_evaluate(cand, GENERIC_PDK)
-        out["spectre"] = {"gain_db": round(s.gain_db, 2), "gbw_mhz": round(s.gbw_hz / 1e6, 2),
-                          "pm_deg": round(s.pm_deg, 2), "power_mw": round(s.power * 1e3, 4)}
+        out["spectre"] = s.summary()
         out["status"] = "ran_real_spectre"
+        if s.unmeasured():
+            out["unmeasured"] = s.unmeasured()
+            out["note"] = UNMEASURED_NOTE
     except SpectreUnavailable as e:
         out["status"] = "spectre_unavailable"
         out["error"] = str(e)
@@ -1199,9 +1205,11 @@ def _compute_opamp_ngspice_eval(seed: int = 0, model: str = "generic") -> dict:
         return out
     try:
         s = ngspice_evaluate(cand, dev_model)
-        out["sim"] = {"gain_db": round(s.gain_db, 2), "gbw_mhz": round(s.gbw_hz / 1e6, 2),
-                      "pm_deg": round(s.pm_deg, 2), "power_mw": round(s.power * 1e3, 4)}
+        out["sim"] = s.summary()
         out["status"] = "ran_ngspice"
+        if s.unmeasured():
+            out["unmeasured"] = s.unmeasured()
+            out["note"] = UNMEASURED_NOTE
     except NgspiceUnavailable as e:
         out["status"] = "ngspice_unavailable"
         out["error"] = str(e)

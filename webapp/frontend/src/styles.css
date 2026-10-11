@@ -614,6 +614,11 @@ button.secondary:hover:not(:disabled) { background: var(--surface-3); color: var
 .drc-list { margin: 0; padding-left: 18px; color: var(--bad); font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
 .note { font-size: var(--fs-sm); color: var(--text-2); margin-top: 12px; line-height: 1.55; }
 .hint { color: var(--text-3); font-size: var(--fs-sm); }
+.unmeasured {
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--warn);
+  border-bottom: 1px dotted var(--warn); cursor: help;
+}
+.note.warn-note { color: var(--warn); }
 
 .loading, .fatal { padding: 32px 4px; font-size: var(--fs-md); color: var(--text-2); }
 .fatal { color: var(--bad); }
